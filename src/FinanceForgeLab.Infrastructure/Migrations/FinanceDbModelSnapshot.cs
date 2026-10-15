@@ -91,6 +91,126 @@ namespace FinanceForgeLab.Infrastructure.Migrations
                     b.ToTable("AuditChanges");
                 });
 
+            modelBuilder.Entity("FinanceForgeLab.Core.BankDocument", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReaderVersion")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StatementJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("BankDocuments");
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.BankImport", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("AccountId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DocumentId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ImportedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("PersonId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ReviewHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReviewJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SectionIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("PersonId");
+
+                    b.HasIndex("SourceReference");
+
+                    b.HasIndex("DocumentId", "SectionIndex")
+                        .IsUnique()
+                        .HasFilter("Status <> 'Voided'");
+
+                    b.ToTable("BankImports", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_BankImport_Status", "Status IN ('Draft','Imported','Voided')");
+                        });
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.BankImportEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Created")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ImportId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("TransactionId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TransactionVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TransactionId");
+
+                    b.HasIndex("ImportId", "Ordinal")
+                        .IsUnique();
+
+                    b.ToTable("BankImportEntries");
+                });
+
             modelBuilder.Entity("FinanceForgeLab.Core.Category", b =>
                 {
                     b.Property<long>("Id")
@@ -514,6 +634,40 @@ namespace FinanceForgeLab.Infrastructure.Migrations
                     b.HasOne("FinanceForgeLab.Core.Household", null)
                         .WithMany()
                         .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.BankImport", b =>
+                {
+                    b.HasOne("FinanceForgeLab.Core.Account", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceForgeLab.Core.BankDocument", null)
+                        .WithMany()
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceForgeLab.Core.Person", null)
+                        .WithMany()
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.BankImportEntry", b =>
+                {
+                    b.HasOne("FinanceForgeLab.Core.BankImport", null)
+                        .WithMany()
+                        .HasForeignKey("ImportId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceForgeLab.Core.FinancialTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("TransactionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

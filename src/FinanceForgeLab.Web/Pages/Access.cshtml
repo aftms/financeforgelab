@@ -1,12 +1,75 @@
 @page "/Access"
 @model FinanceForgeLab.Web.Pages.AccessModel
-<!DOCTYPE html><html lang="pt-PT"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Entrar · FinanceForgeLab</title><link rel="stylesheet" href="/app.css"/></head>
-<body class="access-body"><main class="access-card"><a class="brand access-brand" href="/"><span class="brand-mark">F</span><span>Finance<span class="brand-light">ForgeLab</span></span></a><span class="eyebrow">FINANÇAS PESSOAIS E FAMILIARES</span>
-<h1>@(Model.FirstAccess ? "Um espaço para as tuas finanças." : "Bem-vindo de volta.")</h1>
-<p class="muted">@(Model.FirstAccess ? "Cria a palavra-passe do proprietário para proteger os dados neste computador." : "Introduz a tua palavra-passe para continuar.")</p>
-@if (Model.Error is not null) { <div class="notice error" role="alert">@Model.Error</div> }
-<form method="post"><input type="hidden" name="Setup" value="@Model.FirstAccess.ToString().ToLowerInvariant()"/>
-<label>Palavra-passe<input name="Password" type="password" minlength="12" maxlength="200" required autocomplete="@(Model.FirstAccess ? "new-password" : "current-password")" autofocus/></label>
-@if (Model.FirstAccess) { <label>Confirmar palavra-passe<input name="Confirm" type="password" minlength="12" maxlength="200" required autocomplete="new-password"/></label><p class="hint">Pelo menos 12 caracteres. Guarda-a num local seguro.</p> }
-<button class="button primary wide" type="submit">@(Model.FirstAccess ? "Criar acesso e começar" : "Entrar") <span aria-hidden="true">→</span></button></form>
-<div class="access-footer"><span class="status-dot"></span> Dados guardados localmente no teu computador</div></main></body></html>
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#102f2b" />
+    <title>@(Model.FirstAccess ? "O teu espaço começa aqui" : "Bem-vindo de volta") · FinanceForgeLab</title>
+    <link rel="icon" type="image/png" href="/brand/financeforge-family.png" />
+    <link rel="stylesheet" href="/access.css" asp-append-version="true" />
+    <script src="/access.js" asp-append-version="true" defer></script>
+</head>
+<body>
+    <main class="welcome-shell">
+        <section class="story-panel" aria-labelledby="welcome-title">
+            <a class="wordmark" href="/" aria-label="FinanceForgeLab — início">
+                <img src="/brand/financeforge-family.png" width="46" height="46" alt="" />
+                <span>Finance<span class="wordmark-light">Forge</span><span class="wordmark-lab">Lab</span></span>
+            </a>
+            <div class="story-content">
+                <p class="eyebrow"><span></span> MAIS CLAREZA. MAIS TRANQUILIDADE.</p>
+                <h1 id="welcome-title">Dá forma ao teu<br /><em>futuro financeiro.</em></h1>
+                <p class="story-description">As contas, os planos e as pequenas decisões.<br class="desktop-break" /> Tudo no teu espaço, ao teu ritmo.</p>
+                <div class="forge-art" aria-hidden="true">
+                    <div class="orbit orbit-outer"></div><div class="orbit orbit-inner"></div>
+                    <span class="orbit-point point-one"></span><span class="orbit-point point-two"></span>
+                    <div class="emblem"><img src="/brand/financeforge-family.png" width="190" height="190" alt="" /></div>
+                    <span class="art-caption">UM REGISTO DE CADA VEZ.</span>
+                </div>
+            </div>
+            <div class="story-footer"><span>Feito para o teu dia a dia.</span><span class="footer-line"></span><span>Pessoal. Familiar. Teu.</span></div>
+        </section>
+        <section class="access-panel" aria-labelledby="form-title">
+            <div class="panel-top"><span class="local-badge"><span></span> O teu espaço privado</span><span class="setup-label">@(Model.FirstAccess ? "PRIMEIRO ACESSO" : "BEM-VINDO DE VOLTA")</span></div>
+            <div class="form-content">
+                <div class="form-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg></div>
+                <p class="eyebrow form-eyebrow">@(Model.FirstAccess ? "VAMOS COMEÇAR" : "CONTINUA A TUA HISTÓRIA")</p>
+                <h2 id="form-title">@(Model.FirstAccess ? "Um novo começo.\nSó teu." : "Que bom ter-te\nde volta.")</h2>
+                <p class="form-intro">@(Model.FirstAccess ? "Cria uma palavra-passe para aceder às tuas finanças. É o primeiro passo para ter tudo mais claro." : "O teu espaço está à tua espera. Introduz a palavra-passe para continuar.")</p>
+                @if (Model.Error is not null)
+                {
+                    <div class="form-error" role="alert">@Model.Error</div>
+                }
+                <form method="post" id="access-form">
+                    <input type="hidden" name="Setup" value="@Model.FirstAccess.ToString().ToLowerInvariant()" />
+                    <div class="form-field">
+                        <label for="password">Palavra-passe</label>
+                        <div class="password-control">
+                            <input id="password" name="Password" type="password" minlength="12" maxlength="200" required autocomplete="@(Model.FirstAccess ? "new-password" : "current-password")" placeholder="@(Model.FirstAccess ? "Escolhe uma palavra-passe" : "A tua palavra-passe")" aria-describedby="password-help caps-warning" />
+                            <button type="button" class="reveal-button" data-reveal="password" aria-controls="password" aria-label="Mostrar palavra-passe" aria-pressed="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                        </div>
+                        <p id="password-help" class="field-help">@(Model.FirstAccess ? "Usa pelo menos 12 caracteres. Uma frase é fácil de recordar." : "Usa a palavra-passe que criaste neste computador.")</p>
+                        <p id="caps-warning" class="caps-warning" role="status" hidden>Caps Lock está ativo.</p>
+                    </div>
+                    @if (Model.FirstAccess)
+                    {
+                        <div class="form-field confirm-field">
+                            <label for="confirm">Confirmar palavra-passe</label>
+                            <div class="password-control">
+                                <input id="confirm" name="Confirm" type="password" minlength="12" maxlength="200" required autocomplete="new-password" placeholder="Escreve novamente a palavra-passe" aria-describedby="match-status" />
+                                <button type="button" class="reveal-button" data-reveal="confirm" aria-controls="confirm" aria-label="Mostrar confirmação da palavra-passe" aria-pressed="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                            </div>
+                            <p id="match-status" class="field-help match-status" aria-live="polite"></p>
+                        </div>
+                    }
+                    <button class="submit-button" type="submit"><span>@(Model.FirstAccess ? "Criar o meu espaço" : "Entrar no meu espaço")</span><span aria-hidden="true">↗</span></button>
+                </form>
+                <div class="privacy-note"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg><p><strong>As tuas finanças ficam contigo.</strong><br />Dados guardados localmente neste computador.</p></div>
+            </div>
+            <footer class="panel-footer">Menos ruído. Mais espaço para o que importa.</footer>
+        </section>
+    </main>
+</body>
+</html>

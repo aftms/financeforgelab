@@ -10,6 +10,7 @@ Aplicação web local para gestão financeira pessoal e familiar, desenvolvida e
 - Histórico paginado, pesquisa e filtros por datas, contas, classificações e pessoas.
 - Dashboard com saldos, receitas, despesas, evolução mensal e distribuição por categoria.
 - Exportação CSV e cópias de segurança locais ou cifradas por palavra-passe.
+- Importação de extratos PDF novobanco com revisão por conta, conferência de saldos, classificação, deteção de possíveis duplicados e anulação controlada.
 - Ferramenta de migração de Microsoft Access com simulação, arquivo integral, validação e repetição segura.
 
 ## Requisitos
@@ -56,6 +57,10 @@ As alterações de esquema são explícitas, precedidas de backup. O servidor re
 
 Este repositório contém código e documentação geral. Dados reais, relatórios privados de auditoria, credenciais, documentos e cópias de segurança não devem ser publicados.
 
+A pasta local `Extratos` está excluída do Git. O [guia de importação novobanco](docs/importacao-novobanco.md) explica a preparação, a revisão e a confirmação dos PDFs.
+
 ## Estado
 
-O MVP local e o mecanismo de migração estão implementados e têm testes financeiros e HTTP. A inspeção visual e a interação completa num navegador permanecem por validar. Importação bancária PDF/CSV/Excel/OFX, OCR, orçamentos e recorrências pertencem a fases posteriores.
+O MVP local, a migração histórica e o primeiro leitor de extratos PDF estão implementados, com testes financeiros, de integridade e HTTP. Os fluxos de criação, edição, transferências, anulação, cópias e importação PDF foram ensaiados num navegador sobre dados sintéticos. Os seis ecrãs foram verificados em desktop e telemóvel.
+
+Outros bancos e formatos CSV/Excel/OFX, OCR, orçamentos e recorrências pertencem a fases posteriores. O leitor atual aceita apenas os layouts textuais novobanco identificados e confere os saldos antes de permitir a confirmação.

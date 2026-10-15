@@ -119,4 +119,6 @@ O arranque fornecido liga apenas ao computador local. O acesso pela rede domést
 
 O CSV usa UTF-8, ponto e vírgula, datas ISO e montantes com ponto decimal e quatro casas. Campos textuais com possíveis fórmulas são neutralizados.
 
+Para os PDFs bancários, seguir o [guia de importação novobanco](importacao-novobanco.md). A pasta `Extratos` também está excluída do Git. O PDF original é incluído na base e nas suas cópias de segurança.
+
 A API autenticada está em `/api/v1`, com consultas de movimentos, contas, categorias e dashboard. Escritas e exportações de backup exigem antiforgery; integrações autorizadas podem obter o token em `/api/v1/security/token` e enviá-lo no cabeçalho `X-CSRF-TOKEN`.

@@ -11,6 +11,9 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+// The local launcher runs build output outside Development. Load its static-asset
+// manifest so compressed CSS/JS are served from their build locations as well.
+builder.WebHost.UseStaticWebAssets();
 var workspace = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "../.."));
 var dbPath = Path.GetFullPath(builder.Configuration["Finance:DatabasePath"] ?? Path.Combine(workspace, ".private/finance.sqlite"));
 var privatePath = Path.GetFullPath(builder.Configuration["Finance:PrivatePath"] ?? Path.Combine(workspace, ".private/web"));
@@ -21,6 +24,7 @@ Directory.CreateDirectory(privatePath);
 builder.Configuration["AllowedHosts"] = "localhost;127.0.0.1;[::1]";
 builder.Services.AddSingleton<Func<FinanceDb>>(() => FinanceDb.Open(dbPath));
 builder.Services.AddSingleton<FinanceService>(); builder.Services.AddSingleton<OwnerAuth>();
+builder.Services.AddSingleton(new BankImportService(() => FinanceDb.Open(dbPath), Path.Combine(privatePath, "statements")));
 builder.Services.AddSingleton(new BackupManager(dbPath, Path.Combine(privatePath, "backups")));
 if (!builder.Environment.IsEnvironment("Testing")) builder.Services.AddHostedService<DailyBackup>();
 var protection = builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(privatePath, "keys"))).SetApplicationName("FinanceForgeLab");
@@ -62,6 +66,7 @@ api.MapGet("/accounts", (FinanceService service) => service.AccountsAsync());
 api.MapGet("/movements/{id:long}", (long id, FinanceService service) => service.MovementAsync(id));
 api.MapPost("/movements/{id:long}/void", async (long id, VoidRequest form, FinanceService service) => { await service.VoidMovementAsync(id, form.Version, form.RequestId); return Results.NoContent(); });
 api.MapGet("/categories", (FinanceService service) => service.CategoriesAsync());
+api.MapGet("/statements/{id:long}/original", async (long id, BankImportService service) => { var file = await service.OriginalAsync(id); return Results.File(file.Content, "application/pdf", file.Name); });
 api.MapPost("/movements", async (MovementForm form, FinanceService service) => Results.Ok(new { Id = await service.SaveMovementAsync(form) }));
 api.MapPost("/accounts", async (AccountForm form, FinanceService service) => Results.Ok(new { Id = await service.SaveAccountAsync(form) }));
 api.MapPost("/categories", async (CategoryForm form, FinanceService service) => Results.Ok(new { Id = await service.SaveCategoryAsync(form) }));

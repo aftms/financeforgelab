@@ -1,5 +1,6 @@
 # Private financial data and local analysis
 /.private/
+/Extratos/
 /artifacts/
 *.accdb
 *.mdb

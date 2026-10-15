@@ -22,6 +22,9 @@ public sealed class FinanceDb(DbContextOptions<FinanceDb> options) : DbContext(o
     public DbSet<AuditChange> AuditChanges => Set<AuditChange>();
     public DbSet<OwnerCredential> Owners => Set<OwnerCredential>();
     public DbSet<CommandReceipt> Commands => Set<CommandReceipt>();
+    public DbSet<BankDocument> BankDocuments => Set<BankDocument>();
+    public DbSet<BankImport> BankImports => Set<BankImport>();
+    public DbSet<BankImportEntry> BankImportEntries => Set<BankImportEntry>();
 
     public static FinanceDb Open(string path)
     {
@@ -34,6 +37,16 @@ public sealed class FinanceDb(DbContextOptions<FinanceDb> options) : DbContext(o
 
     protected override void OnModelCreating(ModelBuilder m)
     {
+        m.Entity<BankImport>().HasOne<BankDocument>().WithMany().HasForeignKey(x => x.DocumentId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<BankImport>().HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<BankImport>().HasOne<Person>().WithMany().HasForeignKey(x => x.PersonId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<BankImport>().Property(x => x.Version).IsConcurrencyToken();
+        m.Entity<BankImport>().HasIndex(x => new { x.DocumentId, x.SectionIndex }).IsUnique().HasFilter("Status <> 'Voided'");
+        m.Entity<BankImport>().HasIndex(x => x.SourceReference);
+        m.Entity<BankImport>().ToTable("BankImports", t => t.HasCheckConstraint("CK_BankImport_Status", "Status IN ('Draft','Imported','Voided')"));
+        m.Entity<BankImportEntry>().HasOne<BankImport>().WithMany().HasForeignKey(x => x.ImportId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<BankImportEntry>().HasOne<FinancialTransaction>().WithMany().HasForeignKey(x => x.TransactionId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<BankImportEntry>().HasIndex(x => new { x.ImportId, x.Ordinal }).IsUnique();
         m.Entity<Household>().ToTable("Households", t => t.HasCheckConstraint("CK_Household_Currency", "length(Currency) = 3"));
         m.Entity<Person>().HasOne<Household>().WithMany().HasForeignKey(x => x.HouseholdId).OnDelete(DeleteBehavior.Restrict);
         m.Entity<Category>().HasOne<Household>().WithMany().HasForeignKey(x => x.HouseholdId).OnDelete(DeleteBehavior.Restrict);

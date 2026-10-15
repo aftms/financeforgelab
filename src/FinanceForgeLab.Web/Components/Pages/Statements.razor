@@ -1,0 +1,83 @@
+@page "/extratos"
+@inject BankImportService Imports
+@inject FinanceService Finance
+@inject BackupManager Backups
+<PageTitle>Extratos · FinanceForgeLab</PageTitle>
+<div class="page-heading"><div><span class="eyebrow">DO BANCO PARA O TEU DIA A DIA</span><h1>Extratos</h1><p>Revê cada conta antes de acrescentar os movimentos.</p></div></div>
+@if(message is not null){<div role="status" class="notice @(error?"error":"success")">@message</div>}
+<section class="panel statement-upload"><div><h2>Extrato novobanco</h2><p>PDF com texto, até 20 MB. As contas são separadas e os saldos conferidos automaticamente.</p><label class="button upload-button">@(busy?"A preparar…":"↑ Escolher PDF")<InputFile OnChange="Upload" accept="application/pdf,.pdf" disabled="@busy"/></label></div><p class="hint">O PDF original fica guardado com a importação e incluído nas cópias de segurança. Carregar novamente o mesmo ficheiro abre a revisão existente.</p></section>
+@if(preview is { } view && review is { } form)
+{
+    var s=view.Statement;
+    var editable=view.Import.Status=="Draft";
+    var issues=view.DocumentErrors.Concat(s.Errors).ToList();
+    <section class="panel statement-review" @key="view.Import.Id"><div class="panel-heading"><div><h2>@s.Name · @s.DisplayReference</h2><p>@s.From.ToString("dd/MM/yyyy") a @s.To.ToString("dd/MM/yyyy") · @s.Rows.Count movimentos</p></div><a class="button small" href="@("/api/v1/statements/"+view.Import.Id+"/original")" download>↓ PDF original</a><button type="button" class="icon-button" aria-label="Fechar revisão" @onclick="Close">×</button></div>
+    @if(issues.Count>0){<div class="notice error"><div><strong>A leitura precisa de verificação.</strong>@foreach(var issue in issues.Take(15)){<p>@issue</p>}<p>Este lote não pode ser confirmado enquanto a leitura não conferir.</p></div></div>}
+    else{<div class="statement-totals"><div><span>Saldo inicial</span><strong>@Amount(s.OpeningUnits)</strong></div><div><span>Débitos</span><strong>@Amount(s.DebitTotalUnits)</strong></div><div><span>Créditos</span><strong>@Amount(s.CreditTotalUnits)</strong></div><div><span>Saldo final</span><strong>@Amount(s.ClosingUnits)</strong></div><span class="badge income">✓ Saldos e totais conferidos</span></div>}
+    @if(editable)
+    {
+        <div class="form-grid statement-mapping"><label>Conta da aplicação<select @bind="form.AccountId" @bind:after="AccountChanged"><option value="0">Escolhe a conta correspondente</option>@foreach(var a in accounts.Where(x=>x.Account.Active)){<option value="@a.Account.Id">@a.Account.Name</option>}</select></label><label>Pessoa associada<select @bind="form.PersonId"><option value="">Sem pessoa associada</option>@foreach(var p in view.People){<option value="@p.Id">@p.Name</option>}</select></label><div class="form-note"><a href="/contas">Gerir ou adicionar contas →</a><p class="hint">Usa uma conta diferente para cada número bancário. Confere a data e o saldo de abertura.</p></div></div>
+        <div class="statement-bulk"><label>Categoria para despesas<select @bind="expenseCategory"><option value="">Selecionar categoria</option>@foreach(var c in Available(MovementKind.Expense)){<option value="@c.Id">@CategoryName(c)</option>}</select></label><label>Categoria para receitas<select @bind="incomeCategory"><option value="">Selecionar categoria</option>@foreach(var c in Available(MovementKind.Income)){<option value="@c.Id">@CategoryName(c)</option>}</select></label><button type="button" class="button" @onclick="ApplyCategories">Aplicar categorias às linhas</button></div>
+        <p class="hint statement-help">A transferência entre contas da família exige a outra conta. Quando o outro extrato trouxer a mesma transferência, associa o movimento existente. Um reembolso pode ser classificado como despesa com valor positivo.</p>
+    }
+    else{<div class="notice"><div><strong>@Status(view.Import.Status)</strong><p>Os registos e as decisões deste lote foram preservados.</p></div>@if(view.Import.AccountId is long linkedAccount){<a href="@("/movimentos?conta="+linkedAccount)">Consultar movimentos →</a>}</div>}
+    <div class="table-wrap statement-table"><table><thead><tr><th>Data / origem</th><th>Descrição</th><th class="align-right">Montante</th>@if(editable){<th>Tipo / classificação</th><th>Decisão</th>}</tr></thead><tbody>
+    @foreach(var row in s.Rows)
+    {
+        var decision=form.Rows.Single(x=>x.Ordinal==row.Ordinal);
+        var duplicates=view.Duplicates.GetValueOrDefault(row.Ordinal)??[];
+        var repeated=s.Rows.Count(x=>x.Date==row.Date&&x.Units==row.Units&&x.Description==row.Description)>1;
+        <tr @key="row.Ordinal"><td class="date-cell">@row.Date.ToString("dd/MM/yyyy")<small>Pág. @row.Page · linha @row.Line</small><small>Valor: @row.ValueDate.ToString("dd/MM/yyyy")</small></td><td class="statement-description"><strong>@row.Description</strong>@if(editable&&(duplicates.Count>0||repeated)){<small class="duplicate-warning">Possível duplicado. Revê antes de confirmar.</small>}</td><td class="align-right amount @(row.Units>0?"positive":"")">@Format.Money(row.Units)</td>
+        @if(editable)
+        {
+            <td><label><span class="sr-only">Tipo da linha @row.Ordinal</span><select @bind="decision.Kind" @bind:after="()=>decision.CategoryId=null"><option value="@MovementKind.Income">Receita</option><option value="@MovementKind.Expense">Despesa</option><option value="@MovementKind.Transfer">Transferência</option></select></label>
+            @if(decision.Kind==MovementKind.Transfer){<label><span class="sr-only">Outra conta da linha @row.Ordinal</span><select @bind="decision.CounterpartyAccountId"><option value="">Outra conta da família</option>@foreach(var a in accounts.Where(x=>x.Account.Active&&x.Account.Id!=form.AccountId)){<option value="@a.Account.Id">@a.Account.Name</option>}</select></label>}
+            else{<label><span class="sr-only">Categoria da linha @row.Ordinal</span><select @bind="decision.CategoryId"><option value="">Escolher categoria</option>@foreach(var c in Available(decision.Kind)){<option value="@c.Id">@CategoryName(c)</option>}</select></label>}</td>
+            <td><label><span class="sr-only">Decisão da linha @row.Ordinal</span><select @bind="decision.Decision"><option value="Pending">Por rever</option><option value="Import">Criar movimento</option><option value="Exclude">Não importar esta linha</option>@if(duplicates.Count>0){<option value="Link">Associar existente</option>}</select></label>
+            @if(decision.Decision=="Link"){<label><span class="sr-only">Movimento existente da linha @row.Ordinal</span><select @bind="decision.ExistingTransactionId" @bind:after="()=>SelectExisting(decision,duplicates)"><option value="">Escolher movimento</option>@foreach(var duplicate in duplicates){<option value="@duplicate.TransactionId">#@duplicate.TransactionId · @duplicate.Description</option>}</select></label>}
+            @if(decision.Decision=="Import"&&(duplicates.Count>0||repeated)){<label class="checkbox-label duplicate-confirm"><input type="checkbox" @bind="decision.AcknowledgeDuplicate"/> É um movimento distinto</label>}</td>
+        }
+        </tr>
+    }
+    @if(s.Rows.Count==0){<tr><td colspan="5" class="empty-small">Esta conta não tem movimentos no período.</td></tr>}
+    </tbody></table></div>
+    @if(editable){<div class="form-footer"><p class="hint">@form.Rows.Count(x=>x.Decision=="Import") novos · @form.Rows.Count(x=>x.Decision=="Link") associações · @form.Rows.Count(x=>x.Decision=="Exclude") excluídos. Os saldos do extrato servem para conferência; a importação não altera a abertura da conta.</p><button type="button" class="button" disabled="@busy" @onclick="SaveReview">Guardar revisão</button><button type="button" class="button primary" disabled="@(busy||issues.Count>0||form.AccountId==0)" @onclick="Confirm">Confirmar importação</button></div>}
+    else if(view.Import.Status=="Imported")
+    {
+        @if(confirmVoid){<div class="notice warning"><div><strong>Anular os movimentos criados por este lote?</strong><p>Associações a movimentos anteriores são preservadas. Alterações posteriores ou ligações a outros extratos impedem a anulação automática.</p></div><button class="button danger" disabled="@busy" @onclick="Void">Confirmar anulação do lote</button><button class="button" @onclick="()=>confirmVoid=false">Cancelar</button></div>}
+        else{<div class="form-footer"><button class="button" @onclick="()=>confirmVoid=true">Anular importação</button></div>}
+    }
+    </section>
+}
+<section class="panel"><div class="panel-heading"><div><h2>Extratos preparados</h2><p>Cada conta do PDF tem a sua própria revisão.</p></div><span class="badge neutral">@batches.Count contas / períodos</span></div><div class="table-wrap"><table><thead><tr><th>Documento</th><th>Conta / período</th><th>Movimentos</th><th>Estado</th><th></th></tr></thead><tbody>@foreach(var batch in batches){<tr><td><strong>@batch.Name</strong></td><td>@batch.AccountReference<small>@batch.From.ToString("dd/MM/yyyy") – @batch.To.ToString("dd/MM/yyyy")</small></td><td>@batch.Rows</td><td><span class="badge @(batch.Status=="Imported"?"income":"neutral")">@Status(batch.Status)</span></td><td><button class="button small" disabled="@busy" @onclick="()=>Open(batch.Id)">@(batch.Status=="Draft"?"Rever":"Consultar")</button></td></tr>}@if(batches.Count==0){<tr><td colspan="5" class="empty-small">Escolhe um PDF para começar a revisão.</td></tr>}</tbody></table></div></section>
+@code {
+    List<BankImportSummary> batches=[];List<AccountSummary> accounts=[];List<Category> categories=[];BankImportPreview? preview;BankImportReview? review;string? message;bool busy,error,confirmVoid;long? expenseCategory,incomeCategory;
+    protected override async Task OnInitializedAsync()=>await Reload();
+    async Task Reload(){batches=await Imports.ListAsync();accounts=await Finance.AccountsAsync();categories=await Finance.CategoriesAsync();}
+    static string Status(string status)=>status switch{"Imported"=>"Importado","Voided"=>"Anulado",_=>"Por rever"};
+    static string Amount(long? units)=>units is long value?Format.Money(value):"Por conferir";
+    IEnumerable<Category> Available(MovementKind kind)=>categories.Where(c=>c.Active&&c.Kind==kind&&(c.ParentId is null||categories.Any(p=>p.Id==c.ParentId&&p.Active)));
+    string CategoryName(Category c)=>(c.ParentId is null?"":categories.First(x=>x.Id==c.ParentId).Name+" / ")+c.Name;
+    void Close(){preview=null;review=null;confirmVoid=false;}
+    async Task Upload(InputFileChangeEventArgs args)=>await Run(async()=>{using var stream=new MemoryStream();await args.File.OpenReadStream(20*1024*1024).CopyToAsync(stream);var ids=await Imports.StageAsync(args.File.Name,stream.ToArray());await Reload();await Open(ids[0]);message="PDF preparado. Revê a conta, as classificações e os possíveis duplicados antes de confirmar.";});
+    async Task Open(long id)
+    {
+        preview=await Imports.PreviewAsync(id);var selected=preview.Import.AccountId??await Imports.SuggestedAccountAsync(id)??0;
+        review=preview.Import.Status=="Draft"&&!string.IsNullOrEmpty(preview.Import.ReviewJson)?System.Text.Json.JsonSerializer.Deserialize<BankImportReview>(preview.Import.ReviewJson):null;
+        if(review is null){review=new(){Id=id,Version=preview.Import.Version,AccountId=selected,PersonId=preview.Import.PersonId,Rows=preview.Statement.Rows.Select(r=>new BankRowDecision{Ordinal=r.Ordinal,Kind=r.Units>0?MovementKind.Income:MovementKind.Expense}).ToList()};await AccountChanged();}
+        else{review.Version=preview.Import.Version;preview=await Imports.PreviewAsync(id,review.AccountId);}
+        confirmVoid=false;
+    }
+    async Task AccountChanged()
+    {
+        if(review is not { } current)return;var selected=current.AccountId;var loaded=await Imports.PreviewAsync(current.Id,selected);
+        if(review!=current||current.AccountId!=selected)return;preview=loaded;
+        foreach(var row in current.Rows){row.ExistingTransactionId=null;row.ExistingVersion=null;row.AcknowledgeDuplicate=false;if(preview.Duplicates.ContainsKey(row.Ordinal))row.Decision="Pending";else if(row.Decision=="Link"||row.Decision=="Pending")row.Decision="Import";}
+    }
+    void ApplyCategories(){if(review is null)return;foreach(var row in review.Rows){if(row.Kind==MovementKind.Expense&&expenseCategory is not null)row.CategoryId=expenseCategory;else if(row.Kind==MovementKind.Income&&incomeCategory is not null)row.CategoryId=incomeCategory;}}
+    static void SelectExisting(BankRowDecision row,List<BankDuplicate> duplicates)=>row.ExistingVersion=duplicates.FirstOrDefault(x=>x.TransactionId==row.ExistingTransactionId)?.Version;
+    async Task SaveReview()=>await Run(async()=>{if(review is null)return;await Imports.SaveReviewAsync(review);await Reload();message="Revisão guardada. Podes continuar mais tarde.";});
+    async Task Confirm()=>await Run(async()=>{if(review is null)return;await Backups.CreateAsync("before-import");var result=await Imports.ConfirmAsync(review);await Reload();await Open(result.Id);message=$"Importação confirmada: {result.Created} movimentos criados, {result.Linked} associados e {result.Excluded} excluídos.";});
+    async Task Void()=>await Run(async()=>{if(preview is null)return;var id=preview.Import.Id;await Imports.VoidAsync(id,preview.Import.Version);await Reload();await Open(id);message="Importação anulada. Os movimentos e a origem foram preservados.";});
+    async Task Run(Func<Task> action){if(busy)return;busy=true;error=false;message=null;try{await action();}catch(FinanceRuleException e){message=e.Message;error=true;}catch(Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException){message="O lote foi alterado noutra sessão. Volta a abri-lo.";error=true;}catch(IOException){message="Não foi possível ler ou guardar o ficheiro. Verifica o tamanho e o espaço disponível.";error=true;}finally{busy=false;}}
+}

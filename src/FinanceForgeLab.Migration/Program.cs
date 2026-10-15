@@ -15,6 +15,7 @@ static async Task<int> MainAsync(string[] args)
             "restore --database <backup-sqlite> --output <novo-ficheiro>\n" +
             "decrypt --database <ficheiro.fflbackup> --output <novo-ficheiro.sqlite> (palavra-passe pedida na consola)\n" +
             "check --database <sqlite> (verificações de leitura e resumo sem dados pessoais)\n" +
+            "inspect-statement --file <extrato-pdf> --output <novo-relatorio-json-privado>\n" +
             "Os relatórios detalhados contêm valores financeiros. Guardar numa pasta privada.");
         return 0;
     }
@@ -28,6 +29,16 @@ static async Task<int> MainAsync(string[] args)
             if (i + 1 >= args.Length || !args[i].StartsWith("--", StringComparison.Ordinal) || !options.TryAdd(args[i], args[i + 1]))
                 throw new ArgumentException("Argumentos inválidos ou repetidos.");
         string Required(string key) => options.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? Path.GetFullPath(v) : throw new ArgumentException($"Falta {key}.");
+        if (mode == "inspect-statement")
+        {
+            if (options.Keys.Any(k => k is not ("--file" or "--output"))) throw new ArgumentException("Opção desconhecida.");
+            var statementOutput = Required("--output");
+            if (File.Exists(statementOutput)) throw new IOException("Escolhe um relatório novo.");
+            var statement = NovoBancoStatementReader.Read(Required("--file"));
+            await using (var file = new FileStream(statementOutput, FileMode.CreateNew, FileAccess.Write)) await JsonSerializer.SerializeAsync(file, statement, new JsonSerializerOptions { WriteIndented = true });
+            Console.WriteLine(JsonSerializer.Serialize(new { statement.Valid, statement.Pages, Accounts = statement.Accounts.Count, Rows = statement.Accounts.Sum(x => x.Rows.Count), Errors = statement.Errors.Count + statement.Accounts.Sum(x => x.Errors.Count) }));
+            return statement.Valid ? 0 : 2;
+        }
         if (mode == "check")
         {
             if (options.Keys.Any(k => k != "--database")) throw new ArgumentException("Opção desconhecida.");
