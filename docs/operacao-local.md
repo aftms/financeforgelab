@@ -54,6 +54,17 @@ Definir a palavra-passe do proprietário no primeiro acesso. Depois, adicionar a
 
 Em caso de ligação recusada, executar o lançador e consultar `.private/runtime/build.log`, `web.stdout.log` e `web.stderr.log` se o arranque falhar. O servidor recusa arrancar se a base não existir ou tiver migrações pendentes.
 
+## Mudar o nome ou a localização da pasta
+
+1. Executar `Stop-FinanceForgeLab.cmd` antes de renomear ou mover a pasta. O processo em execução tem referências ao caminho antigo; o lançador de paragem valida esse caminho antes de o terminar.
+2. Renomear ou mover a pasta inteira, incluindo `.private`, `Extratos`, `.git` e `.tools`.
+3. Reabrir o projeto e esta sessão de trabalho a partir da nova pasta.
+4. Executar `Start-FinanceForgeLab.cmd` na nova localização. O lançador deteta caminhos antigos no cache de compilação e força a resolução de dependências e a reconstrução dos recursos quando necessário.
+
+O endereço local continua a ser `http://127.0.0.1:5148` e o remoto Git não depende do nome da pasta. Se o Git acusar propriedade duvidosa, adicionar apenas o caminho exato do novo repositório à configuração `safe.directory`.
+
+Credenciais, chaves, PDFs e base de dados acompanham `.private`. Os caminhos absolutos registados em auditorias antigas indicam a localização no momento da captura; não são usados para localizar os dados operacionais. Uma nova execução da migração Access recebe a localização atual do pacote.
+
 ## Backups e recuperação
 
 Enquanto a aplicação funciona, são criadas cópias locais diárias e semanais, com retenção de sete diárias e quatro semanais. O ecrã de dados permite cópias manuais e exportação cifrada por palavra-passe. Guardar uma cópia exportada num destino independente do computador.

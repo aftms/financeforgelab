@@ -20,7 +20,24 @@ try {
         if (Get-NetTCPConnection -LocalPort 5148 -State Listen -ErrorAction SilentlyContinue) { throw 'A porta 5148 esta ocupada e nao devolve a aplicacao esperada.' }
         [void][IO.Directory]::CreateDirectory($runtime)
         $dotnet = (Get-Command dotnet -ErrorAction Stop).Source
-        & $dotnet build (Join-Path $project 'FinanceForgeLab.Web.csproj') --nologo --verbosity quiet *> (Join-Path $runtime 'build.log')
+        $projectFile = Join-Path $project 'FinanceForgeLab.Web.csproj'
+        $buildArguments = @('build',$projectFile,'--nologo','--verbosity','quiet')
+        $assetsFile = Join-Path $project 'obj\project.assets.json'
+        $refreshPaths = $false
+        if (Test-Path -LiteralPath $assetsFile) {
+            try {
+                $cachedProject = (Get-Content -LiteralPath $assetsFile -Raw | ConvertFrom-Json).project.restore.projectPath
+                $refreshPaths = -not $cachedProject -or [IO.Path]::GetFullPath($cachedProject) -ne $projectFile
+            } catch { $refreshPaths = $true }
+        }
+        # NuGet and static web assets cache absolute paths. Refresh both
+        # after moving/renaming the repository, while preserving .private.
+        if ($refreshPaths) {
+            & $dotnet restore $projectFile --force --no-logo --verbosity quiet *> (Join-Path $runtime 'build.log')
+            if ($LASTEXITCODE -ne 0) { throw 'A atualizacao dos caminhos falhou. Consulta .private\runtime\build.log.' }
+            $buildArguments += @('--no-restore','--no-incremental')
+        }
+        & $dotnet @buildArguments *> (Join-Path $runtime 'build.log')
         if ($LASTEXITCODE -ne 0) { throw 'A compilacao falhou. Consulta .private\runtime\build.log.' }
         $dll = Join-Path $project 'bin\Debug\net10.0\FinanceForgeLab.Web.dll'
         $process = Start-Process -FilePath $dotnet -ArgumentList @(('"' + $dll + '"'),'--urls',$url) -WorkingDirectory $project -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runtime 'web.stdout.log') -RedirectStandardError (Join-Path $runtime 'web.stderr.log')
