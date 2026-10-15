@@ -1,0 +1,12 @@
+@page "/Access"
+@model FinanceForgeLab.Web.Pages.AccessModel
+<!DOCTYPE html><html lang="pt-PT"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Entrar · FinanceForgeLab</title><link rel="stylesheet" href="/app.css"/></head>
+<body class="access-body"><main class="access-card"><a class="brand access-brand" href="/"><span class="brand-mark">F</span><span>Finance<span class="brand-light">ForgeLab</span></span></a><span class="eyebrow">FINANÇAS PESSOAIS E FAMILIARES</span>
+<h1>@(Model.FirstAccess ? "Um espaço para as tuas finanças." : "Bem-vindo de volta.")</h1>
+<p class="muted">@(Model.FirstAccess ? "Cria a palavra-passe do proprietário para proteger os dados neste computador." : "Introduz a tua palavra-passe para continuar.")</p>
+@if (Model.Error is not null) { <div class="notice error" role="alert">@Model.Error</div> }
+<form method="post"><input type="hidden" name="Setup" value="@Model.FirstAccess.ToString().ToLowerInvariant()"/>
+<label>Palavra-passe<input name="Password" type="password" minlength="12" maxlength="200" required autocomplete="@(Model.FirstAccess ? "new-password" : "current-password")" autofocus/></label>
+@if (Model.FirstAccess) { <label>Confirmar palavra-passe<input name="Confirm" type="password" minlength="12" maxlength="200" required autocomplete="new-password"/></label><p class="hint">Pelo menos 12 caracteres. Guarda-a num local seguro.</p> }
+<button class="button primary wide" type="submit">@(Model.FirstAccess ? "Criar acesso e começar" : "Entrar") <span aria-hidden="true">→</span></button></form>
+<div class="access-footer"><span class="status-dot"></span> Dados guardados localmente no teu computador</div></main></body></html>

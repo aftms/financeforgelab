@@ -1,0 +1,36 @@
+# Private financial data and local analysis
+/.private/
+/artifacts/
+*.accdb
+*.mdb
+*.laccdb
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.xlsx
+*.xls
+*.ofx
+*.pdf
+**/bin/
+**/obj/
+**/.vs/
+/.tools/
+
+# The original application and financial audit reports remain local.
+/HFLLibrary/
+/HomeFinanceLigth/
+/docs/FinanceForgeLab-*.md
+/.vscode/
+/.aws/
+/.codex/
+.env
+.env.*
+!.env.example
+*.user
+*.suo
+*.log
+*.pfx
+*.p12
+*.pem
+*.key

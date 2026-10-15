@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FinanceForgeLab.Core/FinanceForgeLab.Core.csproj" />
+    <Project Path="src/FinanceForgeLab.Infrastructure/FinanceForgeLab.Infrastructure.csproj" />
+    <Project Path="src/FinanceForgeLab.Migration/FinanceForgeLab.Migration.csproj" />
+    <Project Path="src/FinanceForgeLab.Web/FinanceForgeLab.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FinanceForgeLab.Tests/FinanceForgeLab.Tests.csproj" />
+  </Folder>
+</Solution>
