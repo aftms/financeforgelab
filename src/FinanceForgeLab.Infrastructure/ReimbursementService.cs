@@ -87,7 +87,7 @@ public sealed class ReimbursementService(Func<FinanceDb> open)
         {
             if (!accounts.TryGetValue(batch.AccountId!.Value, out var account) || debit.AccountId is {} id && id != account.Id) continue;
             var statement = JsonSerializer.Deserialize<BankStatement>(documents[batch.DocumentId].StatementJson)!;
-            if (!statement.Valid) continue;
+            if (!BankStatementConformance.CanImport(statement, statement.Accounts[batch.SectionIndex])) continue;
             foreach (var row in statement.Accounts[batch.SectionIndex].Rows.Where(r => r.Units > 0 && r.Date >= expense.Date && CounterpartyMatches(claim.Debtor, r.Description)))
             {
                 // A bank line already represented by a confirmed credit is offered through that movement only.
@@ -116,7 +116,7 @@ public sealed class ReimbursementService(Func<FinanceDb> open)
         var document = await db.BankDocuments.SingleAsync(d => d.Id == batch.DocumentId);
         if (Convert.ToHexString(SHA256.HashData(document.Content)) != document.Id) throw new FinanceRuleException("O PDF original foi alterado.");
         var statement = JsonSerializer.Deserialize<BankStatement>(document.StatementJson)!;
-        if (!statement.Valid) throw new FinanceRuleException("Resolve os erros de leitura do extrato.");
+        if (!BankStatementConformance.CanImport(statement, statement.Accounts[batch.SectionIndex])) throw new FinanceRuleException("Resolve os erros de leitura do extrato.");
         var row = statement.Accounts[batch.SectionIndex].Rows.Single(r => r.Ordinal == ordinal);
         if (row.Units <= 0 || !CounterpartyMatches(claim.Debtor, row.Description)) throw new FinanceRuleException("Esta linha não identifica um recebimento da entidade que deve o reembolso.");
         var source = $"{batch.DocumentId}:{batch.SectionIndex}:{ordinal}";

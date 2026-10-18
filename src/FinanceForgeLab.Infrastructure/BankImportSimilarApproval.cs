@@ -57,7 +57,7 @@ public sealed partial class BankImportService
         foreach (var item in batches.OrderBy(x => x.Batch.Id))
         {
             var statement = JsonSerializer.Deserialize<BankStatement>(item.StatementJson)!; var section = statement.Accounts[item.Batch.SectionIndex];
-            if (statement.Errors.Count > 0 || section.Errors.Count > 0) continue;
+            if (!BankStatementConformance.CanImport(statement, section)) continue;
             var candidates = section.Rows.Where(r => r.Units != 0 && Math.Sign(r.Units) == Math.Sign(anchor.Units) && !recorded.Contains((item.Batch.Id, r.Ordinal)) &&
                 (reference is not null ? ReferenceMatches(reference, r, categories) : MerchantKey(r.Description) == merchant)).ToList();
             if (candidates.Count == 0) continue;

@@ -8,6 +8,7 @@ public sealed record BankImportSummary(long Id, string Name, string AccountRefer
     public bool IsOnlineCopy { get; init; }
     public int SectionIndex { get; init; }
     public bool HasErrors { get; init; }
+    public bool HasInconsistency { get; init; }
     public long? AccountId { get; init; }
     public string? AccountName { get; init; }
     public string? PersonName { get; init; }
@@ -31,6 +32,7 @@ public sealed record BankDocumentSummary(string Id, string Name, List<BankImport
     public int AwaitingLinkRows => Parts.Sum(p => p.AwaitingLinkRows);
     public int UnclassifiedRows => Parts.Sum(p => p.UnclassifiedRows);
     public bool HasErrors => Parts.Any(p => p.HasErrors);
+    public bool HasInconsistency => Parts.Any(p => p.HasInconsistency);
     public DateOnly From => Parts.Min(p => p.From);
     public DateOnly To => Parts.Max(p => p.To);
     public BankImportSummary? Next => Parts.Where(p => p.Rows > 0 || p.HasErrors)
@@ -44,6 +46,8 @@ public sealed record BankDocumentSummary(string Id, string Name, List<BankImport
 }
 public sealed record BankImportPreview(BankImport Import, StatementAccount Statement, List<string> DocumentErrors, Dictionary<int, List<BankDuplicate>> Duplicates, List<Person> People)
 {
+    public List<string> BlockingErrors { get; init; } = [];
+    public StatementInconsistency? Inconsistency { get; init; }
     public List<string> Notices { get; init; } = [];
     public Dictionary<int, BankClassificationSuggestion> Suggestions { get; init; } = [];
     public Dictionary<int, string> ReviewWarnings { get; init; } = [];

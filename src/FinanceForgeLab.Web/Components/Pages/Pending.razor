@@ -18,7 +18,13 @@ else{
         <section class="panel pending-card"><h2>Contas por associar</h2><strong class="pending-count">@summary.UnassignedExpenses.ToString("N0")</strong><p>Despesas já registadas cuja conta de pagamento falta confirmar.</p>
             @if(summary.UnassignedExpenses>0){<a class="button" href="@($"/movimentos?ano={summary.Year}&tipo=Expense&porAssociar=true")">Identificar contas →</a>}else{<span class="pending-clear">Sem despesas com conta por associar</span>}
         </section>
+        <section class="panel pending-card"><h2>Incongruências</h2><strong class="pending-count">@summary.StatementInconsistencies.Count.ToString("N0")</strong><p>Diferenças nos resumos dos extratos para tua análise.</p>
+            @if(summary.StatementInconsistencies.Count>0){<a class="button" href="#incongruencias">Analisar diferenças →</a>}else{<span class="pending-clear">Sem diferenças identificadas nos extratos deste ano</span>}
+        </section>
     </div>
+    @if(summary.StatementInconsistencies.Count>0){<section class="panel pending-inconsistencies" id="incongruencias"><h2>Incongruências dos extratos</h2><p>Os valores originais são preservados. Estas diferenças não criam movimentos de acerto e continuam visíveis depois de tratar as linhas.</p>
+        @foreach(var issue in summary.StatementInconsistencies){<article><h3>@issue.Account · @issue.From.ToString("dd/MM/yyyy") a @issue.To.ToString("dd/MM/yyyy")</h3><p>@issue.Name</p><p>@issue.Detail.Description</p><p>@(issue.Detail.AllowsImport?"As linhas válidas podem ser tratadas; esta diferença fica para tua análise.":"A leitura precisa de conferência antes de importar.")</p><a class="button" href="@($"/extratos?rever={issue.ImportId}")">Consultar extrato →</a><a class="text-link" href="@($"/api/v1/statements/{issue.ImportId}/original")" download>Original ↓</a></article>}
+    </section>}
     @if(summary.UndatedPurchases>0){<section class="panel pending-undated"><div><h2>Documentos sem data confirmada</h2><p>@summary.UndatedPurchases documentos por conferir, sem associação a um ano.</p></div><a class="button" href="/compras?ano=0&pendentes=true">Rever documentos sem data →</a></section>}
     <p class="hint">A mesma operação pode aparecer em mais de um grupo.@if(summary.BankThrough is {} through){<span> Último extrato com movimentos de @summary.Year: @through.ToString("dd/MM/yyyy").</span>}</p>
 }

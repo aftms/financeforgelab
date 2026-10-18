@@ -54,7 +54,7 @@ public sealed partial class BankImportService
             foreach(var x in sections)
             {
                 var section=x.Document.Accounts[x.Batch.SectionIndex];
-                if(x.Batch.AccountId is null||!x.Document.Valid||!section.Rows.Any(r=>r.Date>=first&&r.Date<=last))continue;
+                if(x.Batch.AccountId is null||!BankStatementConformance.CanImport(x.Document,section)||!section.Rows.Any(r=>r.Date>=first&&r.Date<=last))continue;
                 var matches=await FindDuplicatesAsync(db,section,x.Batch.AccountId);candidates[x.Batch.Id]=matches;
                 foreach(var row in matches)
                     foreach(var m in row.Value.Where(m=>m.Origin=="Purchase"&&m.Kind==MovementKind.Expense&&m.StrongMatch))
@@ -67,7 +67,7 @@ public sealed partial class BankImportService
             foreach(var x in sections.Where(x=>ids.Contains(x.Batch.Id)&&x.Batch.Status=="Draft"&&x.Batch.AccountId!=null))
             {
                 var batch=x.Batch;var section=x.Document.Accounts[batch.SectionIndex];
-                if(!x.Document.Valid||!candidates.TryGetValue(batch.Id,out var matches))continue;
+                if(!BankStatementConformance.CanImport(x.Document,section)||!candidates.TryGetValue(batch.Id,out var matches))continue;
                 var recorded=await db.BankImportEntries.Where(e=>e.ImportId==batch.Id).Select(e=>e.Ordinal).ToHashSetAsync();
                 var review=string.IsNullOrEmpty(batch.ReviewJson)?new BankImportReview{Id=batch.Id,AccountId=batch.AccountId!.Value,PersonId=batch.PersonId,Rows=section.Rows.Select(r=>new BankRowDecision{Ordinal=r.Ordinal,Decision="Import",Kind=r.Units<0?MovementKind.Expense:MovementKind.Income}).ToList()}:JsonSerializer.Deserialize<BankImportReview>(batch.ReviewJson)!;
                 if(review.AccountId!=batch.AccountId||review.PersonId!=batch.PersonId)continue;

@@ -95,7 +95,9 @@ public sealed partial class AssistantService
             {
                 var doc=JsonSerializer.Deserialize<BankStatement>(documents[b.DocumentId].StatementJson,Json)!;
                 var section=doc.Accounts[b.SectionIndex];
-                if(!doc.Valid)Add($"bank:{b.Id}:reading","Verificar leitura",$"Extrato #{b.Id} — leitura ou saldos com erros.",url);
+                if(!BankStatementConformance.CanImport(doc,section))Add($"bank:{b.Id}:reading","Verificar leitura",$"Extrato #{b.Id} — leitura ou saldos com erros.",url);
+                if(BankStatementConformance.Inconsistency(doc,section) is {} discrepancy)
+                    Add($"bank:{b.Id}:inconsistency","Incongruência de extrato",$"Extrato #{b.Id} — {discrepancy.Description} "+(discrepancy.AllowsImport?"Não bloqueia as linhas válidas; aguarda análise do titular, sem criar acertos.":"Conferência necessária antes de importar."),url);
                 if(b.AccountId==null)Add($"bank:{b.Id}:account","Conta do extrato em falta",$"Extrato #{b.Id} · {section.Reference}",url);
                 var decisions=string.IsNullOrEmpty(b.ReviewJson)?new BankImportReview():JsonSerializer.Deserialize<BankImportReview>(b.ReviewJson,Json)!;
                 var excluded=decisions.Rows.Where(r=>r.Decision=="Exclude").Select(r=>r.Ordinal).ToHashSet();

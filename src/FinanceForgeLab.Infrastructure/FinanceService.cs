@@ -300,22 +300,26 @@ public sealed partial class FinanceService(Func<FinanceDb> open)
         var pendingPurchases=PendingPurchases(db);
         var yearFrom=new DateOnly(selected,1,1);var yearTo=new DateOnly(selected,12,31);
         return new(selected, years, Sum(months.Select(x => x.IncomeUnits)), Sum(months.Select(x => x.ExpenseUnits)), financial.Count, unassigned, months, expense, await AccountsAsync())
-            { PendingBankRows = coverage.Pending, BankThrough = coverage.Through,
+            { PendingBankRows = coverage.Pending, BankThrough = coverage.Through, StatementInconsistencies = coverage.Inconsistencies,
               PendingPurchases=await pendingPurchases.CountAsync(e=>e.Date>=yearFrom&&e.Date<=yearTo),
               UndatedPurchases=await pendingPurchases.CountAsync(e=>e.Date==null),
               UnassignedExpenses=financial.Where(r=>r.Kind==MovementKind.Expense&&r.AccountId==null).Select(r=>r.EntryKey).Distinct().Count() };
     }
-    private static async Task<(int Pending, DateOnly? Through)> BankCoverageAsync(FinanceDb db, int year)
+    private static async Task<(int Pending, DateOnly? Through, List<PendingStatementInconsistency> Inconsistencies)> BankCoverageAsync(FinanceDb db, int year)
     {
         var batches = await db.BankImports.AsNoTracking().Where(b => b.Status != "Voided").ToListAsync();
         var documents = await db.BankDocuments.AsNoTracking().Select(d => new { d.Id, d.StatementJson }).ToDictionaryAsync(d => d.Id, d => JsonSerializer.Deserialize<BankStatement>(d.StatementJson)!);
+        var documentNames = await db.BankDocuments.AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.Name);
+        var accountNames = await db.Accounts.AsNoTracking().ToDictionaryAsync(a => a.Id, a => a.Name);
         var entries = (await db.BankImportEntries.AsNoTracking().Select(e => new { e.ImportId, e.Ordinal }).ToListAsync()).Select(e => (e.ImportId, e.Ordinal)).ToHashSet();
         var confirmed = await db.Transactions.AsNoTracking().Where(t => t.Status == "Confirmed").Select(t => new { t.Id, t.Version }).ToDictionaryAsync(t => t.Id, t => t.Version);
-        var pending = 0; DateOnly? through = null;
-        foreach (var batch in batches)
+        var pending = 0; DateOnly? through = null; var inconsistencies = new List<PendingStatementInconsistency>();
+        foreach (var batch in batches.GroupBy(b => (b.DocumentId, b.SectionIndex)).Select(g => g.MaxBy(b => b.Id)!))
         {
             var document = documents[batch.DocumentId]; var section = document.Accounts[batch.SectionIndex];
-            if (section.Rows.Any(r => r.Date.Year == year) && document.Errors.Count == 0 && section.Errors.Count == 0)
+            if (section.From.Year <= year && section.To.Year >= year && BankStatementConformance.Inconsistency(document, section) is {} inconsistency)
+                inconsistencies.Add(new(batch.Id, documentNames[batch.DocumentId], batch.AccountId is {} account ? accountNames.GetValueOrDefault(account, section.DisplayReference) : section.DisplayReference, section.From, section.To, inconsistency));
+            if (section.Rows.Any(r => r.Date.Year == year) && BankStatementConformance.CanImport(document, section))
                 through = through is null || section.To > through ? section.To : through;
             if (batch.Status != "Draft") continue;
             var choices = string.IsNullOrEmpty(batch.ReviewJson) ? [] : JsonSerializer.Deserialize<BankImportReview>(batch.ReviewJson)!.Rows;
@@ -327,7 +331,7 @@ public sealed partial class FinanceService(Func<FinanceDb> open)
                 pending++;
             }
         }
-        return (pending, through);
+        return (pending, through, inconsistencies.OrderByDescending(i => i.To).ToList());
     }
     public async Task<string> ExportCsvAsync(MovementFilter filter)
     {

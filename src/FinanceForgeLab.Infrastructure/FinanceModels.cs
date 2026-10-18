@@ -112,7 +112,8 @@ public sealed record DashboardSummary(int Year, List<int> Years, long IncomeUnit
     public int PendingPurchases { get; init; }
     public int UndatedPurchases { get; init; }
     public int UnassignedExpenses { get; init; }
-    public bool HasReviewPending=>PendingBankRows>0||PendingPurchases>0||UndatedPurchases>0||UnassignedExpenses>0;
+    public List<PendingStatementInconsistency> StatementInconsistencies { get; init; } = [];
+    public bool HasReviewPending=>PendingBankRows>0||PendingPurchases>0||UndatedPurchases>0||UnassignedExpenses>0||StatementInconsistencies.Count>0;
     public DateOnly? BankThrough { get; init; }
 }
 public sealed class FinanceRuleException(string message) : Exception(message);

@@ -5,7 +5,7 @@ public sealed record OperatingProcedure(string Id, string Title, string Trigger,
 // One source for the in-app manual and the instructions supplied to every AI request.
 public static class FinanceOperatingManual
 {
-    public const string Version = "2026-10-18.10";
+    public const string Version = "2026-10-18.11";
     public static IReadOnlyList<OperatingProcedure> Procedures { get; } = [
         new("principios", "Documentos, pagamentos e registos", "Sempre que se consulta ou altera informação financeira.", [
             "Uma fatura, email, imagem ou extrato é uma fonte documental. Não é uma despesa adicional.",
@@ -19,6 +19,7 @@ public static class FinanceOperatingManual
         new("extratos", "Entrada de um extrato bancário", "Ao carregar PDF, OCR ou cópia de movimentos; também ao voltar a processar um extrato conhecido.", [
             "Identificar banco, conta e titular em cada secção. Extratos do mesmo período de António e Suzana não são duplicados por terem datas iguais.",
             "Conferir leitura, datas, sinais e saldos antes de usar as linhas. Uma leitura com erros permanece para verificação.",
+            "Por instrução do titular em 18/10/2026, uma diferença até 0,02 € entre o saldo do resumo e o calculado pelas operações não bloqueia linhas válidas quando todos os saldos sucessivos conferem e não existem outros erros de leitura. Guardar a incongruência em Pendências para análise do titular, com os débitos, créditos e saldos originais e calculados, preservando a fonte e a auditoria mesmo após concluir o extrato. Não criar movimentos de acerto nem alterar valores para esconder a diferença. Divergências maiores e erros de leitura continuam a exigir conferência.",
             "Quando um extrato Revolut tem apenas um aviso de totais, uma conferência explícita pode registar débitos individuais cuja finalidade, classificação, comprovativos e saldo sucessivo foram verificados. A operação exige uma justificação auditada, preserva o PDF e o aviso original e mantém o extrato aberto. Não aprova automaticamente as restantes linhas nem cria movimentos para compensar diferenças.",
             "Procurar cada operação nos movimentos e nas compras já guardadas, cruzando entidade, referência, valor, datas compatíveis e conta. Só o valor e a data não bastam.",
             "Nos débitos genéricos de baixo valor, conferir os documentos Via Verde: a data do débito, o valor e os dígitos visíveis do cartão devem corresponder. Associar a despesa existente e preservar a repartição entre portagens e estacionamento; não criar outra despesa pelo débito bancário.",
@@ -84,7 +85,7 @@ public static class FinanceOperatingManual
             "Associar existente liga a fonte ao movimento já guardado. Não cria outra despesa e, quando confirmado pelo extrato, identifica a conta em falta.",
             "Aprovação em grupo exige as mesmas condições: entidade/referência, classificação e ausência de conflitos. Não propagar decisões apenas porque o texto ou o montante se parecem.",
             "Rever movimentos indica decisões pendentes; verificar leitura indica problemas de extração; consultar movimentos permite ver o resultado e as fontes de uma revisão concluída.",
-            "Também compras, emails, faturas, contas em falta e reembolsos podem precisar de revisão. O módulo Pendências reúne as linhas de extratos por tratar, compras/documentos por conferir e despesas sem conta associada, com filtro por ano. Os documentos sem data aparecem à parte. A revisão integral de dados continua disponível no Assistente.",
+            "Também compras, emails, faturas, contas em falta e reembolsos podem precisar de revisão. O módulo Pendências reúne as linhas de extratos por tratar, compras/documentos por conferir, despesas sem conta associada e incongruências dos resumos dos extratos, com filtro por ano. Uma incongruência não desaparece por importar as linhas. Os documentos sem data aparecem à parte. A revisão integral de dados continua disponível no Assistente.",
             "As notas do tratamento inicial não são avisos atuais. Nas compras resolvidas, não as mostrar como alertas nem criar painéis de notas informativas. Preservar as fontes; mostrar avisos apenas quando existe uma pendência atual.",
             "Ao terminar, apresentar o que foi criado, associado, corrigido ou deixado pendente, com motivo. Só declarar guardado o que foi confirmado pela aplicação."
         ], "Nenhuma pendência escondida por um resumo genérico de sucesso."),

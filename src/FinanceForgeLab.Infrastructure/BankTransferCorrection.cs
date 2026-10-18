@@ -40,8 +40,9 @@ public sealed partial class BankImportService
         var incomingStatement=JsonSerializer.Deserialize<BankStatement>(incomingDocument.StatementJson)!;
         var source=outgoingStatement.Accounts[outgoing.SectionIndex];var target=incomingStatement.Accounts[incoming.SectionIndex];
         const string totalWarning="Os movimentos Revolut não conferem com os totais e o saldo final.";
-        if(outgoingStatement.Errors.Count>0||source.Errors.Count>0||incomingStatement.Errors.Count>0||
-            target.Errors.Any(e=>e!=totalWarning)||target.Errors.Count>0&&!acknowledgeIncomingTotalWarning)
+        if(!BankStatementConformance.CanImport(outgoingStatement,source)||
+            !BankStatementConformance.CanImport(incomingStatement,target)&&(incomingStatement.Errors.Count>0||
+            target.Errors.Any(e=>e!=totalWarning)||target.Errors.Count>0&&!acknowledgeIncomingTotalWarning))
             throw new FinanceRuleException("Confere a leitura das linhas e os avisos do extrato antes de associar.");
         var debit=source.Rows.Single(r=>r.Ordinal==outgoingOrdinal);var credit=target.Rows.Single(r=>r.Ordinal==incomingOrdinal);
         var elapsed=credit.Date.DayNumber-debit.Date.DayNumber;

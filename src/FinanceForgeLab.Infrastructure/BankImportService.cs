@@ -40,7 +40,8 @@ public sealed partial class BankImportService(Func<FinanceDb> open, string archi
             return new BankImportSummary(x.Import.Id, x.Name, s.DisplayReference, s.From, s.To, s.Rows.Count, x.Import.Status, x.Import.Version)
             {
                 DocumentId = x.Import.DocumentId, SectionIndex = x.Import.SectionIndex, IsOnlineCopy = statement.ReaderVersion == OnlineBankStatementReader.Version,
-                HasErrors = statement.Errors.Count > 0 || s.Errors.Count > 0,
+                HasErrors = !BankStatementConformance.CanImport(statement, s),
+                HasInconsistency = BankStatementConformance.Inconsistency(statement, s) is not null,
                 AccountId = accountId, AccountName = accountId is {} a ? accountNames.GetValueOrDefault(a) : null,
                 RegisteredRows = recorded.Count, ExcludedRows = excluded.Count,
                 ClassifiedRows = x.Import.Status == "Draft" ? classified : 0,
@@ -134,7 +135,7 @@ public sealed partial class BankImportService(Func<FinanceDb> open, string archi
         {
             if (batch.Status != "Draft" || batch.AccountId is not null || batch.ReviewJson.Length > 0) continue;
             var section = statement.Accounts[batch.SectionIndex];
-            if (section.Errors.Count > 0) continue;
+            if (!BankStatementConformance.CanImport(statement, section)) continue;
             if (string.IsNullOrWhiteSpace(section.Reference) || section.OpeningUnits is null) continue;
             var known = await db.BankImports.Where(b => b.SourceReference == batch.SourceReference && b.AccountId != null).ToListAsync();
             var ids = known.Select(b => b.AccountId!.Value).Distinct().ToList();
@@ -181,6 +182,8 @@ public sealed partial class BankImportService(Func<FinanceDb> open, string archi
         return new(batch, section, statement.Errors, duplicates, await db.People.AsNoTracking().OrderBy(x => x.Name).ToListAsync())
         {
             Notices = statement.Notices,
+            BlockingErrors = BankStatementConformance.BlockingErrors(statement, section),
+            Inconsistency = BankStatementConformance.Inconsistency(statement, section),
             ReviewWarnings = await FundingReviewWarningsAsync(db,section,accountId??batch.AccountId),
             RecordedTransactions = await (from e in db.BankImportEntries join t in db.Transactions on e.TransactionId equals t.Id where e.ImportId == id && t.Status == "Confirmed" select new { e.Ordinal, e.TransactionId }).ToDictionaryAsync(e => e.Ordinal, e => e.TransactionId),
             Suggestions = batch.Status == "Draft" ? await ClassifyAsync(db, section, accountId ?? batch.AccountId) : []
@@ -245,7 +248,7 @@ public sealed partial class BankImportService(Func<FinanceDb> open, string archi
                     throw new FinanceRuleException("Confere a finalidade, a classificação e o saldo sucessivo de cada débito selecionado.");
             }
         }
-        else if (statement.Errors.Count > 0 || section.Errors.Count > 0) throw new FinanceRuleException("Resolve os erros de leitura e conferência antes de importar.");
+        else if (!BankStatementConformance.CanImport(statement, section)) throw new FinanceRuleException("Resolve os erros de leitura e conferência antes de importar.");
         if (Convert.ToHexString(SHA256.HashData(document.Content)) != document.Id) throw new FinanceRuleException("A fonte original guardada foi alterada. A importação foi bloqueada.");
         if (review.Rows.Count != section.Rows.Count || review.Rows.Select(x => x.Ordinal).Distinct().Count() != section.Rows.Count || review.Rows.Any(x => !section.Rows.Any(r => r.Ordinal == x.Ordinal))) throw new FinanceRuleException("A revisão não corresponde a todas as linhas deste extrato.");
         var account = await db.Accounts.SingleOrDefaultAsync(x => x.Id == review.AccountId && x.Active && x.Currency == "EUR") ?? throw new FinanceRuleException("Seleciona uma conta ativa em EUR.");
@@ -353,7 +356,7 @@ public sealed partial class BankImportService(Func<FinanceDb> open, string archi
             choice.Decision = "Link"; choice.ExistingTransactionId = id; choice.ExistingVersion = version;
         }
         batch.ReviewJson = JsonSerializer.Serialize(review);
-        db.Add(new AuditChange { Entity = "BankImport", EntityId = batch.Id, Action = verifiedDebitReason is not null ? "ConfirmVerifiedDebits" : selected is null ? "Confirm" : "ConfirmRows", Actor = "Owner", CreatedUtc = DateTime.UtcNow, DetailJson = JsonSerializer.Serialize(new { Rows = selected?.Order().ToArray(), Review = review, VerifiedDebitReason=verifiedDebitReason, PreservedStatementErrors=statement.Errors, PreservedSectionErrors=section.Errors }) });
+        db.Add(new AuditChange { Entity = "BankImport", EntityId = batch.Id, Action = verifiedDebitReason is not null ? "ConfirmVerifiedDebits" : selected is null ? "Confirm" : "ConfirmRows", Actor = "Owner", CreatedUtc = DateTime.UtcNow, DetailJson = JsonSerializer.Serialize(new { Rows = selected?.Order().ToArray(), Review = review, VerifiedDebitReason=verifiedDebitReason, PreservedStatementErrors=statement.Errors, PreservedSectionErrors=section.Errors, Inconsistency=BankStatementConformance.Inconsistency(statement,section) }) });
         await db.SaveChangesAsync(); if (tx is not null) await tx.CommitAsync();
         return selected is null ? await ResultAsync(db, batch.Id, review.Rows.Count) : new(batch.Id,
             await db.BankImportEntries.CountAsync(e => e.ImportId == batch.Id && e.Created),

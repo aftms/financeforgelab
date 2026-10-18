@@ -41,6 +41,73 @@ public sealed class BankImportTests : IAsyncLifetime
         var p = await Imports.PreviewAsync(id, account);
         return new() { Id = id, Version = p.Import.Version, AccountId = account, Rows = p.Statement.Rows.Select(r => new BankRowDecision { Ordinal = r.Ordinal, Kind = r.Units > 0 ? MovementKind.Income : MovementKind.Expense, CategoryId = r.Units > 0 ? income : expense }).ToList() };
     }
+    private async Task<long> SmallSummaryDiscrepancy(string scenario = "small")
+    {
+        await using var db = Open();
+        var reference = await db.BankImports.Select(b => b.SourceReference).FirstAsync();
+        var section = new StatementAccount { Reference=reference, From=new(2026,7,1), To=new(2026,7,31),
+            OpeningUnits=1_000_000, ClosingUnits=scenario=="large"?900300:900000, DebitTotalUnits=scenario=="large"?99700:100000, CreditTotalUnits=0,
+            Errors=["Os movimentos Revolut não conferem com os totais e o saldo final."], Rows=[
+                new(){Ordinal=1,Date=new(2026,7,5),ValueDate=new(2026,7,5),Description="Render verificação cartão",Units=-8900,BalanceUnits=991100},
+                new(){Ordinal=2,Date=new(2026,7,5),ValueDate=new(2026,7,6),Description="Render mensalidade",Units=-100000,BalanceUnits=891100},
+                new(){Ordinal=3,Date=new(2026,7,7),ValueDate=new(2026,7,7),Description="Render devolução",Units=8700,BalanceUnits=899800}] };
+        if(scenario=="balance")section.Rows[1].BalanceUnits++;
+        if(scenario=="reading")section.Errors.Add("Data ambígua.");
+        if(scenario=="missing-total")section.CreditTotalUnits=null;
+        if(scenario=="summary-equation")section.ClosingUnits++;
+        if(scenario=="date")section.Rows[0].Date=section.From.AddDays(-1);
+        var statement=new BankStatement{BankName="Revolut",Accounts=[section],Errors=scenario=="document"?["Documento incompleto."]:[]};
+        var bytes=Encoding.UTF8.GetBytes("%PDF-summary-discrepancy-"+scenario);
+        var hash=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+        db.Add(new BankDocument{Id=hash,Name="summary-discrepancy.pdf",Content=bytes,StatementJson=System.Text.Json.JsonSerializer.Serialize(statement)});
+        var batch=new BankImport{DocumentId=hash,SourceReference=reference,AccountId=account};db.Add(batch);await db.SaveChangesAsync();
+        var review=new BankImportReview{Id=batch.Id,Version=batch.Version,AccountId=account,Rows=section.Rows.Select(r=>new BankRowDecision{Ordinal=r.Ordinal,Kind=MovementKind.Expense,CategoryId=expense}).ToList()};
+        batch.ReviewJson=System.Text.Json.JsonSerializer.Serialize(review);await db.SaveChangesAsync();return batch.Id;
+    }
+    [Theory]
+    [InlineData("large")][InlineData("balance")][InlineData("reading")][InlineData("document")]
+    [InlineData("missing-total")][InlineData("summary-equation")][InlineData("date")]
+    public async Task SmallSummaryPolicyDoesNotBypassOtherConformanceGuards(string scenario)
+    {
+        var id=await SmallSummaryDiscrepancy(scenario);var preview=await Imports.PreviewAsync(id);
+        Assert.NotEmpty(preview.BlockingErrors);
+        await Assert.ThrowsAsync<FinanceRuleException>(async()=>await Imports.ConfirmRowsAsync(await Imports.PrepareReviewAsync(id),[2]));
+        await using var db=Open();Assert.False(await db.BankImportEntries.AnyAsync(e=>e.ImportId==id));
+    }
+    [Fact] public async Task SmallSummaryDifferenceAllowsImportAndRemainsPendingAfterCompletionWithoutAdjustment()
+    {
+        var id=await SmallSummaryDiscrepancy();var before=await Finance.DashboardAsync(2026);
+        var issue=Assert.Single(before.StatementInconsistencies);Assert.Equal(id,issue.ImportId);Assert.Equal(200,issue.Detail.DifferenceUnits);
+        Assert.True(issue.Detail.AllowsImport);Assert.Equal(108900,issue.Detail.CalculatedDebitUnits);Assert.Equal(8700,issue.Detail.CalculatedCreditUnits);
+        var preview=await Imports.PreviewAsync(id);Assert.Empty(preview.BlockingErrors);Assert.NotEmpty(preview.Statement.Errors);
+        var summary=(await Imports.ListAsync()).Single(s=>s.Id==id);Assert.False(summary.HasErrors);Assert.True(summary.HasInconsistency);
+        var original=(await Imports.OriginalAsync(id)).Content;
+        var review=await Imports.PrepareReviewAsync(id);var result=await Imports.ConfirmAsync(review);
+        Assert.Equal(3,result.Created);Assert.Equal(result,await Imports.ConfirmAsync(review));
+        var after=await Finance.DashboardAsync(2026);Assert.Equal(0,after.PendingBankRows);Assert.Single(after.StatementInconsistencies);
+        Assert.True(after.HasReviewPending);Assert.Equal(100200,after.ExpenseUnits);Assert.Equal(0,after.IncomeUnits);
+        Assert.Empty((await Finance.DashboardAsync(2025)).StatementInconsistencies);
+        Assert.Equal(original,(await Imports.OriginalAsync(id)).Content);
+        await using var db=Open();Assert.Equal(3,await db.BankImportEntries.CountAsync(e=>e.ImportId==id));
+        var audit=await db.AuditChanges.SingleAsync(a=>a.Entity=="BankImport"&&a.EntityId==id&&a.Action=="Confirm");
+        Assert.Contains("\"DifferenceUnits\":200",audit.DetailJson);Assert.Contains("PreservedSectionErrors",audit.DetailJson);
+        await Imports.VoidAsync(id,(await Imports.PreviewAsync(id)).Import.Version);
+        Assert.Empty((await Finance.DashboardAsync(2026)).StatementInconsistencies);
+    }
+    [Fact] public async Task SmallSummaryDifferenceShowsPendingEntryAndAllowsIndividualApprovalInThePage()
+    {
+        var id=await SmallSummaryDiscrepancy();
+        var html=await RenderReview(id,interact:async page=>await page.Call("ApproveRow",2));
+        Assert.Contains("Aprovação concluída: 1 movimentos criados",html);
+        Assert.Contains("Incongruência no resumo do extrato",html);Assert.Contains("Podes aprovar as linhas válidas",html);
+        Assert.DoesNotContain("Este lote não pode ser confirmado",html);Assert.DoesNotContain("✓ Saldos e totais conferidos",html);
+        await using var services=new ServiceCollection().AddLogging().AddSingleton(Finance).BuildServiceProvider();
+        await using var renderer=new HtmlRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        var pending=await renderer.Dispatcher.InvokeAsync(async()=>WebUtility.HtmlDecode((await renderer.RenderComponentAsync<FinanceForgeLab.Web.Components.Pages.Pending>()).ToHtmlString()));
+        Assert.Contains("Incongruências dos extratos",pending);Assert.Contains("summary-discrepancy.pdf",pending);
+        Assert.Contains($"/extratos?rever={id}",pending);Assert.Contains($"/api/v1/statements/{id}/original",pending);
+        Assert.Contains("continuam visíveis depois de tratar as linhas",pending);
+    }
     [Theory]
     [InlineData("valid",true)]
     [InlineData("unchecked",false)]

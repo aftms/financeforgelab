@@ -23,7 +23,7 @@ public sealed partial class BankImportService
         var document=await db.BankDocuments.SingleAsync(d=>d.Id==batch.DocumentId);
         var statement=JsonSerializer.Deserialize<BankStatement>(document.StatementJson)!;
         var row=statement.Accounts[batch.SectionIndex].Rows.Single(r=>r.Ordinal==ordinal);
-        if(batch.Status=="Voided"||!statement.Valid||batch.AccountId is null||
+        if(batch.Status=="Voided"||!BankStatementConformance.CanImport(statement,statement.Accounts[batch.SectionIndex])||batch.AccountId is null||
             entry.TransactionId!=bankTransactionId||!entry.Created||entry.TransactionVersion!=bankVersion||
             bank.Version!=bankVersion||bankVersion!=1||bank.Status!="Confirmed"||bank.Origin!="BankImport"||bank.Kind!=MovementKind.Expense||
             purchase.Version!=purchaseVersion||purchase.Status!="Confirmed"||purchase.Origin!="Purchase"||purchase.Kind!=MovementKind.Expense||
