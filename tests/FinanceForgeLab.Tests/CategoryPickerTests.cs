@@ -44,6 +44,39 @@ public sealed class CategoryPickerTests
             await picker.Change("ChangeRoot", ""); Assert.Null(value);
         });
     }
+    [Fact] public async Task SearchSelectionPreservesArchivedLinksAndSwitchesBetweenGlobalAndSpecificCategories()
+    {
+        var categories=new List<Category>{
+            new(){Id=1,Name="Categoria antiga",Kind=MovementKind.Expense,Active=false},
+            new(){Id=11,Name="Subcategoria antiga",ParentId=1,Kind=MovementKind.Expense,Active=false},
+            new(){Id=2,Name="Casa",Kind=MovementKind.Expense},
+            new(){Id=21,Name="Condomínio",ParentId=2,Kind=MovementKind.Expense},
+            new(){Id=22,Name="Por classificar",ParentId=2,Kind=MovementKind.Expense}};
+        await using var services=new ServiceCollection().AddLogging().BuildServiceProvider();
+        await using var renderer=new HtmlRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{
+            TestPicker? picker=null;long? value=11;
+            var root=await renderer.RenderComponentAsync<TestPicker>(ParameterView.FromDictionary(new Dictionary<string,object?>{
+                [nameof(TestPicker.Categories)]=categories,[nameof(TestPicker.Value)]=value,[nameof(TestPicker.FilterMode)]=true,
+                [nameof(TestPicker.IncludeInactive)]=true,[nameof(TestPicker.IncludeAllUnclassified)]=true,[nameof(TestPicker.EmptyText)]="Todas as categorias",
+                [nameof(TestPicker.Capture)]=(Action<TestPicker>)(p=>picker=p),[nameof(TestPicker.ValueChanged)]=EventCallback.Factory.Create<long?>(new object(),id=>value=id)}));
+            Assert.Equal(1,picker!.Root);Assert.Equal(11,picker.Child);
+            var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+            Assert.Contains("Subcategoria antiga (inativa)",html);Assert.Contains("Todas as subcategorias",html);
+            await picker.Change("ChangeRoot","0");Assert.Equal(0,value);
+            await picker.SetParametersAsync(ParameterView.FromDictionary(new Dictionary<string,object?>{[nameof(TestPicker.Value)]=value}));
+            Assert.Null(picker.Root);Assert.Null(picker.Child);
+            Assert.Contains("Por classificar de todas as categorias",root.ToHtmlString());
+            await picker.Change("ChangeRoot","2");Assert.Equal(2,value);
+            await picker.SetParametersAsync(ParameterView.FromDictionary(new Dictionary<string,object?>{[nameof(TestPicker.Value)]=value}));
+            Assert.Equal(2,picker.Root);Assert.Null(picker.Child);
+            await picker.Change("ChangeChild","22");Assert.Equal(22,value);
+            await picker.SetParametersAsync(ParameterView.FromDictionary(new Dictionary<string,object?>{[nameof(TestPicker.Value)]=value}));
+            Assert.Equal(22,picker.Child);
+            await picker.Change("ChangeChild","");Assert.Equal(2,value); // All subcategories uses the parent query.
+            await picker.Change("ChangeRoot","");Assert.Null(value);
+        });
+    }
     public sealed class TestPicker : CategoryPicker
     {
         [Parameter] public Action<TestPicker>? Capture {get;set;}

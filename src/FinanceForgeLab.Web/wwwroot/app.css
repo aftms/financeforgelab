@@ -40,7 +40,8 @@
 .movement-filters{padding:10px 14px;margin-bottom:12px}
 .movement-filters label{gap:3px;font-size:10px}
 .movement-filters input,.movement-filters select{min-height:32px;padding:5px 8px;font-size:11px}
-.movement-filters .filter-grid{grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:8px 10px}
+.movement-filters .filter-grid{grid-template-columns:repeat(5,minmax(0,1fr)) auto;gap:8px 10px}
+.movement-filters .filter-grid>.category-picker{grid-column:span 2;gap:8px 10px}
 .movement-filters .filter-actions{grid-column:auto;align-self:end;align-items:center;min-height:32px;gap:8px}
 .movement-filters .checkbox-label input{min-height:15px;padding:0}
 .movement-period{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:8px}

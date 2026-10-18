@@ -5,7 +5,7 @@ public sealed record OperatingProcedure(string Id, string Title, string Trigger,
 // One source for the in-app manual and the instructions supplied to every AI request.
 public static class FinanceOperatingManual
 {
-    public const string Version = "2026-10-18.9";
+    public const string Version = "2026-10-18.10";
     public static IReadOnlyList<OperatingProcedure> Procedures { get; } = [
         new("principios", "Documentos, pagamentos e registos", "Sempre que se consulta ou altera informação financeira.", [
             "Uma fatura, email, imagem ou extrato é uma fonte documental. Não é uma despesa adicional.",
@@ -118,6 +118,7 @@ public static class FinanceOperatingManual
             "Visão geral: escolher o ano, consultar receitas/despesas e abrir os movimentos de uma categoria. Transferências e saldos de abertura não são rendimento nem despesa do período.",
             "No gráfico mensal da visão geral, selecionar uma barra abre os movimentos do respetivo mês e ano, filtrados por receitas ou despesas conforme a barra escolhida.",
             "Movimentos: filtrar por período, conta, pessoa, tipo ou categoria. Os filtros atualizam a consulta automaticamente; os cabeçalhos permitem ordenar. O período inicial é o mês atual.",
+            "Todas as pesquisas e seleções de classificação apresentam Categoria e Subcategoria em dois campos separados e dependentes. Selecionar uma categoria na pesquisa inclui as suas subcategorias; escolher uma subcategoria restringe os resultados a essa classificação. Mudar a categoria limpa a subcategoria anterior. O filtro geral Por classificar continua a reunir todas as categorias, e as classificações antigas permanecem pesquisáveis no histórico.",
             "Ao criar ou editar um movimento, escolher primeiro Categoria e depois Subcategoria nos dois campos separados. A subcategoria apresenta apenas opções da categoria escolhida; mudar a categoria limpa a subcategoria anterior. Nas transferências, escolher a conta de destino.",
             "Compras e pagamentos: o filtro de ano inclui apenas documentos com data desse ano. Documentos sem data ficam em Sem data confirmada ou Todos os anos, mesmo quando se consultam apenas pendentes. Não atribuir um ano pelo nome do ficheiro; documentos sem data e valor não criam movimentos.",
             "Origem e documentos permite consultar as fontes quando necessário, sem ocupar a lista com todos os artigos ou o corpo dos emails. Para localizar um email, copiar o assunto para a pesquisa da conta indicada e conferir remetente e data; quando o Gateway fornecer uma ligação oficial, usar Abrir email. O comprovativo guardado continua acessível na app. Todos os movimentos usam Editar / Anular; a origem não define um tipo diferente de entrada. Incluir anulados permite consultar o histórico.",

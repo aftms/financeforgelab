@@ -6,7 +6,7 @@
 @if(editor is {} form){
 <section class="panel"><h2>@(form.Id==0?"Novo compromisso":"Editar compromisso")</h2><EditForm Model="form" OnValidSubmit="Save" FormName="recurring"><div class="form-grid">
 <label>Nome<InputText @bind-Value="form.Name" maxlength="120"/></label>
-<label>Categoria / subcategoria<InputSelect @bind-Value="form.CategoryId"><option value="">Todas — identificar pela descrição</option>@foreach(var c in categories.Where(c=>c.Kind==MovementKind.Expense&&(c.Active||c.Id==form.CategoryId))){<option value="@c.Id">@CategoryLabel(c)</option>}</InputSelect></label>
+<div class="recurring-category-fields"><CategoryPicker Categories="categories" Kind="MovementKind.Expense" @bind-Value="form.CategoryId" PreserveInactiveSelection="true" FilterMode="true" EmptyText="Todas — identificar pela descrição" Disabled="busy" Context="do compromisso"/></div>
 <label>Descrição contém<InputText @bind-Value="form.ContainsText" maxlength="150" placeholder="Opcional: fornecedor, renda, subscrição…"/></label>
 <label>Conta<InputSelect @bind-Value="form.AccountId"><option value="">Todas as contas</option>@foreach(var a in accounts){<option value="@a.Account.Id">@a.Account.Name</option>}</InputSelect></label>
 <label>Periodicidade<InputSelect @bind-Value="form.Frequency">@foreach(var f in FinanceService.RecurringFrequencies){<option value="@f.Key">@f.Value</option>}</InputSelect></label>
@@ -45,7 +45,6 @@ else{
     string LastChange{get{var m=LastMonth;if(m<2||report!.MonthCount(m-1)==0)return "Sem comparação com o mês anterior";var prior=report.MonthUnits(m-1);var difference=report.MonthUnits(m)-prior;return $"{(difference>0?"+":"")}{Format.Money(difference)} face a {MonthName(m-1)}"+(prior==0?"":$" ({difference/(decimal)prior:+0.0%;-0.0%;0.0%})");}}
     int BarHeight(long units)=>(int)Math.Max(2,(decimal)units/Math.Max(1,Enumerable.Range(1,12).Max(m=>report!.MonthUnits(m)))*100);
     static string MonthName(int month)=>new DateTime(2000,month,1).ToString("MMMM",System.Globalization.CultureInfo.GetCultureInfo("pt-PT"));
-    string CategoryLabel(Category c)=>(c.ParentId is {} parent?categories.FirstOrDefault(x=>x.Id==parent)?.Name+" / ":"")+c.Name;
     static RecurringExpenseForm Form(RecurringExpense r)=>new(){Id=r.Id,Version=r.Version,Name=r.Name,CategoryId=r.CategoryId,AccountId=r.AccountId,ContainsText=r.ContainsText,Frequency=r.Frequency,Included=r.Included};
     void New(){editor=new();message=null;}
     void Edit(RecurringExpense rule){editor=Form(rule);message=null;}
