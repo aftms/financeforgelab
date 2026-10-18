@@ -1,16 +1,18 @@
 @page "/dados"
 @inject BackupManager Backups
+@inject DataOriginService Origins
 <PageTitle>Dados e cópias · FinanceForgeLab</PageTitle>
-<div class="page-heading"><div><span class="eyebrow">CUIDAR DO TEU HISTÓRICO</span><h1>Dados e cópias</h1><p>Preserva os teus registos e leva uma cópia contigo.</p></div></div>
+<div class="page-heading"><div><span class="eyebrow">CUIDAR DO TEU HISTÓRICO</span><h1>Dados e cópias</h1><p>Consulta as origens da informação e preserva os teus registos.</p></div></div>
 @if(message is not null){<div class="notice success" role="status">@message</div>}
+<DataOriginOverview Report="origins"/>
 <div class="dashboard-grid"><section class="panel"><div class="panel-heading"><div><h2>Cópia local</h2><p>Uma cópia consistente, com integridade verificada.</p></div><span class="small-icon">▧</span></div><p>São criadas cópias diárias enquanto a aplicação está a funcionar, com retenção de 7 diárias e 4 semanais. As cópias manuais são conservadas.</p><button class="button primary" disabled="@busy" @onclick="Create">@(busy?"A criar cópia…":"Criar cópia agora")</button><p class="hint">As cópias locais ficam na pasta privada da aplicação. Para proteger contra perda deste computador, exporta uma cópia para outro destino.</p></section>
 <section class="panel"><div class="panel-heading"><div><h2>Exportar cópia protegida</h2><p>O ficheiro será cifrado com a palavra-passe escolhida.</p></div><span class="small-icon">↗</span></div><form action="/api/v1/backups/export" method="post" data-enhance="false"><AntiforgeryToken/><label>Palavra-passe da cópia<input type="password" name="password" minlength="12" maxlength="200" required autocomplete="new-password"/></label><p class="hint">Pelo menos 12 caracteres. Precisas desta palavra-passe para recuperar o ficheiro.</p><button class="button" type="submit">↓ Exportar cópia cifrada</button></form></section></div>
 <section class="panel"><div class="panel-heading"><div><h2>Cópias disponíveis</h2><p>Datas apresentadas em UTC</p></div><span class="badge neutral">@files.Count ficheiros</span></div><div class="table-wrap"><table><thead><tr><th>Criada em</th><th>Tipo</th><th class="align-right">Tamanho</th></tr></thead><tbody>@foreach(var file in files.Take(20)){<tr><td>@file.Date.ToString("dd/MM/yyyy HH:mm")</td><td>@BackupType(file.Name)</td><td class="align-right">@((file.Length/1024d/1024d).ToString("N1")) MB</td></tr>}@if(files.Count==0){<tr><td colspan="3" class="empty-small">Ainda não existem cópias locais.</td></tr>}</tbody></table></div></section>
 <div class="notice"><div><strong>Exportar movimentos</strong><p>No ecrã de movimentos podes exportar um CSV que respeita os filtros escolhidos.</p></div><a href="/movimentos">Ir para movimentos →</a></div>
 <BusyIndicator Active="busy" />
 @code {
-    List<(string Name,DateTime Date,long Length)> files=[];string? message;bool busy;
-    protected override void OnInitialized()=>files=Backups.List();
+    List<(string Name,DateTime Date,long Length)> files=[];string? message;bool busy;DataOriginReport? origins;
+    protected override async Task OnInitializedAsync(){files=Backups.List();origins=await Origins.ReadAsync();}
     static string BackupType(string name)=>name.StartsWith("daily-")?"Diária":name.StartsWith("weekly-")?"Semanal":name.StartsWith("export-")?"Exportação":"Manual";
     async Task Create(){if(busy)return;busy=true;StateHasChanged();await Task.Delay(1);try{await Backups.CreateAsync();files=Backups.List();message="Cópia criada e integridade verificada.";}catch(IOException){message="Não foi possível criar a cópia. Verifica o espaço disponível e tenta novamente.";}finally{busy=false;}}
 }

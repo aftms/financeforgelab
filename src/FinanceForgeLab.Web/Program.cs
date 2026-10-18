@@ -35,6 +35,8 @@ builder.Services.AddSingleton<AssistantWorker>();
 if(!builder.Environment.IsEnvironment("Testing"))builder.Services.AddHostedService(sp=>sp.GetRequiredService<AssistantWorker>());
 builder.Services.AddSingleton(new BankImportService(() => FinanceDb.Open(dbPath), Path.Combine(privatePath, "statements")));
 builder.Services.AddSingleton(new BackupManager(dbPath, Path.Combine(privatePath, "backups")));
+builder.Services.AddSingleton(new DataOriginService(() => FinanceDb.Open(dbPath), Path.Combine(privatePath, "data-origins.json"), workspace, dbPath, privatePath,
+    builder.Configuration["Finance:AssistantPath"] ?? Path.Combine(workspace, ".private/assistant")));
 if (!builder.Environment.IsEnvironment("Testing")) builder.Services.AddHostedService<DailyBackup>();
 var protection = builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(privatePath, "keys"))).SetApplicationName("FinanceForgeLab");
 if (OperatingSystem.IsWindows()) protection.ProtectKeysWithDpapi();
@@ -72,6 +74,7 @@ api.MapGet("/security/token", (HttpContext ctx, IAntiforgery anti) => Results.Ok
 api.MapGet("/dashboard", (int? year, FinanceService service) => service.DashboardAsync(year));
 api.MapGet("/movements", ([AsParameters] ApiMovementFilter filter, FinanceService service) => service.MovementsAsync(filter.ToFilter()));
 api.MapGet("/accounts", (FinanceService service) => service.AccountsAsync());
+api.MapGet("/data-origins", (DataOriginService service) => service.ReadAsync());
 api.MapGet("/purchases/sources/{id:long}/original",async(long id,BankImportService service)=>{var file=await service.EvidenceOriginalAsync(id);return Results.File(file.Content,"application/pdf",file.Name);});
 api.MapGet("/reimbursements", (ReimbursementService service) => service.ListAsync());
 api.MapGet("/movements/{id:long}", (long id, FinanceService service) => service.MovementAsync(id));

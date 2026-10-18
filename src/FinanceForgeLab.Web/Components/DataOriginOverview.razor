@@ -1,0 +1,41 @@
+@if(Report is {} data){
+<section class="panel origin-overview" id="origens"><div class="panel-heading"><div><h2>Origens dos dados</h2><p>Onde procuramos informação e o que ajuda a reconhecer cada operação.</p></div><a class="button small" href="/api/v1/data-origins" download="FinanceForgeLab-origens.json">↓ Exportar mapa de origens</a></div>
+<p>Os nomes de pastas abaixo identificam os locais disponíveis. As contagens de fontes e mensagens referem-se apenas ao que está guardado na aplicação; não confirmam que toda a pasta esteja revista.</p>
+@if(data.InventoryVerifiedUtc is {} verified){<p class="hint">Inventário de pastas verificado em @verified.ToString("dd/MM/yyyy HH:mm") UTC. A informação dos registos é consultada ao abrir esta página.</p>}
+@if(data.InventoryNotice is {} notice){<p class="notice">@notice</p>}
+<div class="origin-totals"><span><strong>@data.FileRoots.Sum(r=>r.Folders.Count(f=>f.Inventoried))</strong> pastas de ficheiros inventariadas</span><span><strong>@data.EmailAccounts.Sum(a=>a.Folders.Count(f=>f.Inventoried))</strong> pastas de email inventariadas</span><span><strong>@data.BankDocuments</strong> documentos bancários guardados</span><span><strong>@data.PurchaseSources</strong> origens de compras</span></div>
+<label class="origin-search">Procurar no mapa<input @bind="search" @bind:event="oninput" placeholder="Pasta, conta, fornecedor, referência…"/></label>
+<h3>Pastas no computador</h3>
+@foreach(var root in data.FileRoots){<article class="origin-group"><h4>@root.Name</h4>@if(root.PhysicalPath.Length>0){<code class="origin-path">@root.PhysicalPath</code>}<p>@root.Description</p><p class="hint">@(root.Complete?"Lista de subpastas completa na data do inventário.":"Lista de subpastas ainda não confirmada como completa.") A pesquisa do Assistente percorre subpastas e trata documentos novos, alterados e pendências.</p>
+<details open="@Searching"><summary>Subpastas · @root.Folders.Count(f=>Matches(root.Name+" "+f.Path)) correspondências</summary><ul class="origin-folders">@foreach(var folder in root.Folders.Where(f=>Matches(root.Name+" "+f.Path))){<li><code>@FolderLabel(folder.Path)</code>@if(folder.SavedSources>0){<small>@folder.SavedSources origens guardadas</small>}@if(!folder.Inventoried){<small>Referida nos registos; não consta do inventário recente</small>}</li>}</ul></details>
+@if(root.Files.Count>0){<details open="@Searching"><summary>Ficheiros na raiz · @root.Files.Count(f=>Matches(f)) correspondências</summary><ul class="origin-folders">@foreach(var file in root.Files.Where(Matches)){<li><code>@file</code></li>}</ul></details>}
+</article>}
+<h3>Contas e pastas de email</h3>
+@foreach(var account in data.EmailAccounts){<article class="origin-group"><h4>@account.Name</h4><p>@account.Policy</p><p class="hint">@(account.Complete?"Inventário de pastas completo na data indicada.":"Inventário de pastas por confirmar.") As mensagens são apenas consultadas: não são movidas nem marcadas como lidas.</p>
+@if(account.Name=="Hotmail"){<p><strong>Verificação obrigatória:</strong> <code>@FinanceForgeLab.Core.AssistantEmailPolicy.ViaVerdeFolder</code> — extratos, faturas, recibos e PDFs de resumo e detalhe.</p>}
+<details open="@Searching"><summary>Pastas e memória de processamento · @account.Folders.Count(f=>Matches(account.Name+" "+f.Path)) correspondências</summary><div class="table-wrap"><table><thead><tr><th>Pasta</th><th>Mensagens com origem guardada</th><th>Fontes pendentes</th><th>Última atividade na memória · UTC</th><th>Retoma</th></tr></thead><tbody>
+@foreach(var folder in account.Folders.Where(f=>Matches(account.Name+" "+f.Path))){<tr><td><code>@FolderLabel(folder.Path)</code>@if(!folder.Inventoried){<small>Referida nos registos ou obrigatória; não consta do inventário recente</small>}@if(Readable(folder.Path)!=folder.Path){<details><summary>Identificador disponibilizado</summary><code>@folder.Path</code></details>}</td><td>@folder.SavedMessages</td><td>@folder.PendingSources</td><td>@(folder.LastActivityUtc?.ToString("dd/MM/yyyy HH:mm")??"Sem atividade guardada")</td><td>@folder.Resume</td></tr>}
+</tbody></table></div></details></article>}
+<p class="hint">A memória usa identificadores de mensagens, caminho completo, referências e hashes dos anexos. A mesma mensagem com vários PDFs conta uma vez na respetiva pasta. A pesquisa financeira retoma o histórico autorizado desde 01/09/2019, com sobreposição de sete dias; janelas incompletas e pendências não são dadas como concluídas.</p>
+<h3>Referências usadas na identificação</h3><p>Além do fornecedor e do código bancário, cruzamos referência da encomenda/fatura, valor e moeda, datas do documento e do banco, titular, conta e dígitos visíveis do cartão. Valor e data, por si só, não confirmam uma correspondência.</p>
+<p class="hint">A autorização do cartão não prova cobrança; um recibo em moeda estrangeira não fixa o débito em euros. Fatura, email e extrato da mesma operação são fontes do mesmo registo. As classificações abaixo são referências guardadas para a conta indicada; não substituem a conferência da compra concreta.</p>
+<details open="@Searching"><summary>Referências guardadas · @data.References.Count(ReferenceMatches) correspondências</summary><div class="table-wrap"><table><thead><tr><th>Entidade / código</th><th>Significado confirmado</th><th>Conta</th><th>Categoria / subcategoria</th><th>Âmbito</th></tr></thead><tbody>
+@foreach(var reference in data.References.Where(ReferenceMatches)){<tr><td><strong>@(reference.Merchant.Length>0?reference.Merchant:"Referência bancária")</strong>@if(reference.Code.Length>0){<code>@reference.Code</code>}</td><td>@reference.Description</td><td>@reference.Account</td><td>@reference.Category</td><td>@if(reference.Date is {} day){<span>@day.ToString("dd/MM/yyyy") · @(reference.AmountUnits is {} units?Format.Money(units):"Valor por confirmar")</span>}else{<span>Identificação da entidade</span>}</td></tr>}
+@if(!data.References.Any(ReferenceMatches)){<tr><td colspan="5">Sem referências nesta pesquisa.</td></tr>}
+</tbody></table></div></details>
+<p><a href="/recorrentes">Consultar compromissos e periodicidades →</a> · <a href="/manual">Consultar regras de identificação →</a></p>
+<h3>Histórico e armazenamento local</h3><p>@data.LegacyMovements registos conservados da aplicação anterior. Os dados antigos já tratados não precisam de nova revisão. Novas provas podem identificar a conta de um movimento existente, preservando a classificação e os documentos.</p>
+<dl class="origin-locations">@foreach(var location in data.Locations.Where(l=>Matches(l.Name+" "+l.Path+" "+l.Description))){<div><dt>@location.Name</dt><dd><code>@location.Path</code><p>@location.Description</p></dd></div>}</dl>
+<p class="hint">O inventário de pastas é um mapa local datado. As cópias da base preservam as origens e referências associadas aos registos; exportar este mapa conserva também os caminhos e o inventário aqui apresentados.</p>
+<a class="button" href="/assistente">Atualizar documentos ou verificar novos emails no Assistente →</a>
+</section>
+}else{<p class="loading">A consultar origens dos dados…</p>}
+@code{
+    [Parameter] public DataOriginReport? Report{get;set;}
+    string search="";bool Searching=>!string.IsNullOrWhiteSpace(search);
+    bool Matches(string text)=>Normalize(text).Contains(Normalize(search),StringComparison.OrdinalIgnoreCase);
+    bool ReferenceMatches(IdentificationReference reference)=>Matches(reference.Merchant+" "+reference.Code+" "+reference.Description+" "+reference.Account+" "+reference.Category);
+    static string Normalize(string text)=>string.Concat(Readable(text).Normalize(System.Text.NormalizationForm.FormD).Where(c=>System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c)!=System.Globalization.UnicodeCategory.NonSpacingMark));
+    static string FolderLabel(string text)=>text.Length==0?"(raiz)":Readable(text);
+    static string Readable(string text){if(!text.Contains('Ã')&&!text.Contains('Â'))return text;try{return new System.Text.UTF8Encoding(false,true).GetString(System.Text.Encoding.GetEncoding(28591,System.Text.EncoderFallback.ExceptionFallback,System.Text.DecoderFallback.ExceptionFallback).GetBytes(text));}catch(Exception e)when(e is System.Text.DecoderFallbackException or System.Text.EncoderFallbackException){return text;}}
+}
