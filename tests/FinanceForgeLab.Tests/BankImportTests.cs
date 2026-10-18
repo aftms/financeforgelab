@@ -1498,6 +1498,66 @@ public sealed class BankImportTests : IAsyncLifetime
         [Parameter] public int? InitialYear {get;set;}
         protected override Task OnInitializedAsync(){YearRequested=InitialYear;ReviewOnly=true;return base.OnInitializedAsync();}
     }
+    [Theory]
+    [InlineData(null,false,false)]
+    [InlineData(false,false,true)]
+    [InlineData(true,false,false)]
+    [InlineData(null,true,true)]
+    [InlineData(true,true,true)]
+    public async Task TreatedDocumentsAreHiddenByDefaultButHistoryAndDirectLinksRemainAvailable(bool? pending,bool direct,bool visible)
+    {
+        var document=PurchaseDocument("test:treated",amount:30);document.Date=new(2026,1,1);document.Description="Comprovativo tratado de teste";
+        var id=Assert.Single(await Imports.StageEvidenceAsync([document]));await Imports.ConfirmEvidenceMovementAsync(id,1,account,expense,true);
+        await using var services=new ServiceCollection().AddLogging().AddSingleton(Imports).AddSingleton(Finance).BuildServiceProvider();
+        await using var renderer=new HtmlRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        var html=await renderer.Dispatcher.InvokeAsync(async()=>WebUtility.HtmlDecode((await renderer.RenderComponentAsync<PurchaseStateTestPage>(ParameterView.FromDictionary(new Dictionary<string,object?>{
+            [nameof(PurchaseStateTestPage.InitialPending)]=pending,[nameof(PurchaseStateTestPage.InitialEvidence)]=direct?id:null}))).ToHtmlString()));
+        Assert.Equal(visible,html.Contains("<h3>Comprovativo tratado de teste</h3>"));
+        if(visible){Assert.Contains(">Tratado</span>",html);Assert.Contains("Associada ao movimento #",html);}
+        else{Assert.Contains("Não há documentos por conferir nestes filtros",html);Assert.Contains("Mostrar documentos tratados",html);}
+        await using var db=Open();Assert.Equal(3,await db.Transactions.CountAsync());Assert.Single(await db.PurchaseEvidenceSources.ToListAsync());
+    }
+    [Fact]public async Task TreatedDocumentsHistoryToggleAndApprovalRemoveResolvedDocumentFromPendingView()
+    {
+        var done=PurchaseDocument("test:done",order:"done",amount:30);done.Date=new(2026,1,1);done.Description="Documento anteriormente tratado";
+        var doneId=Assert.Single(await Imports.StageEvidenceAsync([done]));await Imports.ConfirmEvidenceMovementAsync(doneId,1,account,expense,true);
+        var pending=PurchaseDocument("test:pending",order:"pending",amount:20);pending.Date=new(2026,1,2);pending.Description="Documento ainda por conferir";
+        await Imports.StageEvidenceAsync([pending]);
+        await using var services=new ServiceCollection().AddLogging().AddSingleton(Imports).AddSingleton(Finance).BuildServiceProvider();
+        await using var renderer=new HtmlRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{
+            PurchaseStateTestPage? page=null;
+            var component=await renderer.RenderComponentAsync<PurchaseStateTestPage>(ParameterView.FromDictionary(new Dictionary<string,object?>{
+                [nameof(PurchaseStateTestPage.Capture)]=(Action<PurchaseStateTestPage>)(p=>page=p)}));
+            string Html()=>WebUtility.HtmlDecode(component.ToHtmlString());
+            Assert.Contains("<h3>Documento ainda por conferir</h3>",Html());Assert.DoesNotContain("<h3>Documento anteriormente tratado</h3>",Html());
+            await page!.History(true);Assert.Contains("<h3>Documento anteriormente tratado</h3>",Html());Assert.Contains("<h3>Documento ainda por conferir</h3>",Html());
+            await page.History(false);await page.ApproveFirst();
+            Assert.DoesNotContain("<h3>Documento ainda por conferir</h3>",Html());Assert.Contains("Não há documentos por conferir nestes filtros",Html());
+            await page.History(true);Assert.Contains("<h3>Documento ainda por conferir</h3>",Html());Assert.Contains("<h3>Documento anteriormente tratado</h3>",Html());
+        });
+        await using var db=Open();Assert.Equal(4,await db.Transactions.CountAsync());Assert.Equal(2,await db.PurchaseEvidenceSources.CountAsync());Assert.Empty(await Finance.PendingPurchaseIdsAsync());
+    }
+    [Fact]public async Task TreatedDocumentWithNewSourceConflictStillAppearsInDefaultReview()
+    {
+        var document=PurchaseDocument("test:conflict",amount:30);document.Date=new(2026,1,1);document.Description="Documento com conflito por conferir";
+        var id=Assert.Single(await Imports.StageEvidenceAsync([document]));await Imports.ConfirmEvidenceMovementAsync(id,1,account,expense,true);
+        await using(var db=Open()){var evidence=await db.PurchaseEvidence.SingleAsync(e=>e.Id==id);evidence.HasSourceConflict=true;await db.SaveChangesAsync();}
+        await using var services=new ServiceCollection().AddLogging().AddSingleton(Imports).AddSingleton(Finance).BuildServiceProvider();
+        await using var renderer=new HtmlRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        var html=await renderer.Dispatcher.InvokeAsync(async()=>WebUtility.HtmlDecode((await renderer.RenderComponentAsync<FinanceForgeLab.Web.Components.Pages.Purchases>()).ToHtmlString()));
+        Assert.Contains("<h3>Documento com conflito por conferir</h3>",html);Assert.Contains(">Por conferir</span>",html);
+    }
+    public sealed class PurchaseStateTestPage:FinanceForgeLab.Web.Components.Pages.Purchases
+    {
+        [Parameter]public bool? InitialPending{get;set;}
+        [Parameter]public long? InitialEvidence{get;set;}
+        [Parameter]public Action<PurchaseStateTestPage>? Capture{get;set;}
+        protected override Task OnInitializedAsync(){ReviewOnly=InitialPending;EvidenceRequested=InitialEvidence;Capture?.Invoke(this);return base.OnInitializedAsync();}
+        async Task Call(string method,params object[] args){var result=typeof(FinanceForgeLab.Web.Components.Pages.Purchases).GetMethod(method,BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(this,args);if(result is Task task)await task;StateHasChanged();}
+        public async Task History(bool include){typeof(FinanceForgeLab.Web.Components.Pages.Purchases).GetField("showCompleted",BindingFlags.NonPublic|BindingFlags.Instance)!.SetValue(this,include);await Call("FilterChanged");}
+        public async Task ApproveFirst(){var rows=(System.Collections.IList)typeof(FinanceForgeLab.Web.Components.Pages.Purchases).GetField("rows",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(this)!;var row=rows[0]!;row.GetType().GetProperty("Checked")!.SetValue(row,true);await Call("Approve",row);}
+    }
     private PurchaseEvidence PurchaseDocument(string key,string order="404-1111111-2222222",decimal amount=10)=>new(){SourceKey=key,Source=key.StartsWith("email")?"Email de confirmação":"Imagem da encomenda",Channel="Amazon",OrderReference=order,Description="Adaptador USB",Date=new(2025,1,1),Units=Money.ToUnits(amount),CategoryId=expense};
     [Fact] public async Task InvoiceIssuedWeeksEarlierMatchesItsScheduledDebitWithoutChangingIssueDate()
     {

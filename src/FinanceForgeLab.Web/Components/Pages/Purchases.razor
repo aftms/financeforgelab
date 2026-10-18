@@ -5,12 +5,13 @@
 <PageTitle>Compras e pagamentos · FinanceForgeLab</PageTitle>
 <div class="page-heading"><div><span class="eyebrow">DAR CONTEXTO AOS MOVIMENTOS</span><h1>Compras e pagamentos</h1><p>Faturas, emails e outros comprovativos associados aos registos por categoria.</p></div><a class="button" href="/extratos">Importar extratos →</a></div>
 @if(message is not null){<div role="status" class="notice @(error?"error":"success")">@message</div>}
-@if(EvidenceRequested is not null){<p class="notice">Comprovativo associado aos registos por categoria. <a href="/compras">Consultar todos os comprovativos →</a></p>}
+@if(EvidenceRequested is not null){<p class="notice">Comprovativo associado aos registos por categoria. <a href="/compras">Voltar aos documentos por conferir →</a></p>}
 <section class="panel purchase-inbox">
-<div class="panel-heading"><div><h2>Informação para conferir</h2><p>@FilteredEvidence.Count registos · @FilteredEvidence.Count(e=>pendingIds.Contains(e.Id)) por conferir. As categorias propostas já estão preenchidas.</p></div></div>
+<div class="panel-heading"><div><h2>@(EvidenceRequested is not null?"Comprovativo selecionado":showCompleted?"Documentos e comprovativos":"Documentos por conferir")</h2><p>@FilteredEvidence.Count documentos nesta consulta · @FilteredEvidence.Count(e=>pendingIds.Contains(e.Id)) por conferir.</p></div></div>
 <div class="statement-document-filters"><label>Serviço ou comerciante<select @bind="Channel" @bind:after="FilterChanged"><option value="">Todos</option>@foreach(var channel in allEvidence.Select(e=>e.Channel).Distinct().Order()){<option value="@channel">@channel</option>}</select></label>
 <label>Ano<select @bind="YearRequested" @bind:after="FilterChanged"><option value="">Todos os anos</option><option value="0">Sem data confirmada</option>@foreach(var year in allEvidence.Where(e=>e.Date!=null).Select(e=>e.Date!.Value.Year).Concat(YearRequested is >0?[YearRequested.Value]:Array.Empty<int>()).Distinct().OrderDescending()){<option value="@year">@year</option>}</select></label>
-<label class="checkbox-label"><input type="checkbox" @bind="ReviewOnly" @bind:after="FilterChanged"/> Apenas pendentes de revisão</label></div>
+@if(EvidenceRequested is null){<label class="checkbox-label"><input type="checkbox" @bind="showCompleted" @bind:after="FilterChanged"/> Mostrar documentos tratados</label>}</div>
+@if(EvidenceRequested is null&&!showCompleted){<p class="hint">Os documentos tratados ficam no histórico e nas origens dos movimentos. Ativa Mostrar documentos tratados para os consultar aqui.</p>}
 @if(YearRequested is >0&&UndatedCount>0){<p class="hint">Existem @UndatedCount documentos sem data confirmada, fora deste filtro. <button type="button" class="button small" @onclick="ShowUndated">Ver documentos sem data →</button></p>}
 @if(YearRequested==0){<p class="hint">Estes documentos não têm uma data de compra identificada e não estão associados a nenhum ano.</p>}
 @if(coverage is {From:{} coverageFrom} report){<details class="purchase-coverage"><summary>Pagamentos sem fatura desde @coverageFrom.ToString("dd/MM/yyyy") · @report.Gaps.Count por conferir</summary><p class="hint">Extratos disponíveis até @report.To?.ToString("dd/MM/yyyy"). Compras em loja podem ter talões próprios; pagamentos indicados como possíveis carregamentos precisam de identificação.</p><div class="table-wrap"><table><thead><tr><th>Data</th><th>Conta / pessoa</th><th>Descrição</th><th>Montante</th></tr></thead><tbody>@foreach(var gap in report.Gaps){<tr><td>@gap.Date.ToString("dd/MM/yyyy")</td><td>@gap.Account · @gap.Person</td><td>@gap.Description @if(gap.PossibleTopUp){<small>Possível carregamento — por confirmar</small>}</td><td>@Format.Money(gap.Units)</td></tr>}</tbody></table></div></details>}
@@ -22,6 +23,7 @@
     var documents=sources.Where(s=>s.EvidenceId==e.Id).ToList();
     var similar=allEvidence.Where(r=>r.Id!=e.Id && e.Units is not null && r.Units==e.Units && r.Date==e.Date && string.Equals(r.Channel,e.Channel,StringComparison.OrdinalIgnoreCase)).ToList();
     <article class="purchase-card" @key="e.Id">
+        <span class="badge @(pendingIds.Contains(e.Id)?"expense":"neutral")">@(pendingIds.Contains(e.Id)?"Por conferir":"Tratado")</span>
         <div class="purchase-summary"><div><small>@(e.Date?.ToString("dd/MM/yyyy")??"Data por confirmar") · @e.Channel · @e.Merchant</small><h3>@e.Description</h3>@if(e.OrderReference.Length>0){<small>@(documents.Any(d=>d.DocumentName==e.OrderReference)?"Ficheiro":"Encomenda") @e.OrderReference</small>}</div><strong class="amount">@(e.Units is {} amount?Format.Money(amount):"Valor por confirmar")</strong></div>
         @if(e.ExpectedPaymentDate is {} paymentDate){<p class="hint">Débito previsto: @paymentDate.ToString("dd/MM/yyyy") · A data do documento é preservada.</p>}
         @if(e.PaymentMethod=="Cancelled"){<p class="hint"><strong>Reserva ou compra cancelada sem cobrança.</strong> Os comprovativos e a anulação ficam no histórico.</p>} else if(e.PaymentMethod=="TopUp"){<p class="hint"><strong>Carregamento de cartão — transferência entre contas.</strong> Não é uma despesa adicional.</p>} else if(e.PaymentMethod=="StoredValue"){<p class="hint">Compra paga com saldo do Cartão Continente. O documento original discrimina a utilização de saldo e os descontos.</p>} else if(e.PaymentMethod=="Split")
@@ -50,7 +52,7 @@
         }
     </article>
 }
-@if(rows.Count==0){<p class="empty-small">Não há compras ou documentos que correspondam a estes filtros.</p>}
+@if(rows.Count==0){<p class="empty-small">@(EvidenceRequested is null&&!showCompleted?"Não há documentos por conferir nestes filtros. Ativa Mostrar documentos tratados para consultar o histórico.":"Não há compras ou documentos que correspondam a estes filtros.")</p>}
 @if(Pages>1){<div class="form-footer"><button type="button" class="button small" disabled="@(busy||page<=1)" @onclick="()=>ShowPage(page-1)">← Anteriores</button><span>Página @(page) de @Pages</span><button type="button" class="button small" disabled="@(busy||page>=Pages)" @onclick="()=>ShowPage(page+1)">Seguintes →</button></div>}
 </section>
 <BusyIndicator Active="busy" />
@@ -61,10 +63,11 @@
     [SupplyParameterFromQuery(Name="canal")] public string? Channel{get;set;}
     [SupplyParameterFromQuery(Name="compra")] public long? EvidenceRequested{get;set;}
     [SupplyParameterFromQuery(Name="ano")] public int? YearRequested{get;set;}
-    [SupplyParameterFromQuery(Name="pendentes")] public bool ReviewOnly{get;set;}
+    [SupplyParameterFromQuery(Name="pendentes")] public bool? ReviewOnly{get;set;}
+    bool showCompleted;
     HashSet<long> pendingIds=[];
     int page=1;const int PageSize=20;
-    IEnumerable<PurchaseEvidence> ScopedEvidence=>allEvidence.Where(e=>(EvidenceRequested is null||e.Id==EvidenceRequested)&&(string.IsNullOrEmpty(Channel)||string.Equals(e.Channel,Channel,StringComparison.OrdinalIgnoreCase))&&(!ReviewOnly||pendingIds.Contains(e.Id)));
+    IEnumerable<PurchaseEvidence> ScopedEvidence=>allEvidence.Where(e=>(EvidenceRequested is null||e.Id==EvidenceRequested)&&(string.IsNullOrEmpty(Channel)||string.Equals(e.Channel,Channel,StringComparison.OrdinalIgnoreCase))&&(EvidenceRequested is not null||showCompleted||pendingIds.Contains(e.Id)));
     int UndatedCount=>ScopedEvidence.Count(e=>e.Date is null);
     List<PurchaseEvidence> FilteredEvidence=>ScopedEvidence.Where(e=>YearRequested is null||(YearRequested==0?e.Date is null:e.Date?.Year==YearRequested)).ToList();
     int Pages=>Math.Max(1,(FilteredEvidence.Count+PageSize-1)/PageSize);
@@ -73,7 +76,7 @@
     Dictionary<long,List<EvidenceMatch>> matches=[];
     List<PurchaseEvidenceSource> sources=[];
     bool busy,error; string? message;
-    protected override async Task OnParametersSetAsync(){page=1;await Reload();}
+    protected override async Task OnParametersSetAsync(){showCompleted=ReviewOnly is false;page=1;await Reload();}
     async Task Reload()
     {
         categories=await Finance.CategoriesAsync(); accounts=await Finance.AccountsAsync();
