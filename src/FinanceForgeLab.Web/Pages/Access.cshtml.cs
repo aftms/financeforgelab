@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace FinanceForgeLab.Web.Pages;
 
 [AllowAnonymous]
+[TypeFilter(typeof(AccessAntiforgeryRecoveryFilter))]
 public sealed class AccessModel(OwnerAuth auth) : PageModel
 {
     [BindProperty] public string Password { get; set; } = "";
@@ -16,7 +17,13 @@ public sealed class AccessModel(OwnerAuth auth) : PageModel
     [BindProperty] public bool Setup { get; set; }
     public bool FirstAccess { get; private set; }
     public string? Error { get; private set; }
-    public async Task<IActionResult> OnGetAsync() { if (User.Identity?.IsAuthenticated == true) return Redirect("/"); FirstAccess = !await auth.ExistsAsync(); return Page(); }
+    public async Task<IActionResult> OnGetAsync(bool refresh = false)
+    {
+        if (User.Identity?.IsAuthenticated == true) return Redirect("/");
+        FirstAccess = !await auth.ExistsAsync();
+        if (refresh) Error = "A página de entrada foi atualizada. Introduz novamente a palavra-passe.";
+        return Page();
+    }
     public async Task<IActionResult> OnPostAsync()
     {
         FirstAccess = !await auth.ExistsAsync();

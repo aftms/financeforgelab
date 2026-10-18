@@ -36,14 +36,33 @@ public sealed class WebSecurityTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Redirect,(await client.GetAsync("/")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized,(await client.GetAsync("/api/v1/export.csv")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized,(await client.GetAsync("/api/v1/statements/1/original")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized,(await client.GetAsync("/api/v1/assistant/request/attachments/1")).StatusCode);
     }
     [Fact]public async Task SetupRequiresAntiforgeryAndCannotReplaceAnExistingOwner()
     {
-        using var client=Client();var rejected=await client.PostAsync("/Access",new FormUrlEncodedContent(new Dictionary<string,string>{{"Password","synthetic-owner-password"},{"Confirm","synthetic-owner-password"},{"Setup","true"}}));Assert.Equal(HttpStatusCode.BadRequest,rejected.StatusCode);
+        using var client=Client();var rejected=await client.PostAsync("/Access",new FormUrlEncodedContent(new Dictionary<string,string>{{"Password","synthetic-owner-password"},{"Confirm","synthetic-owner-password"},{"Setup","true"}}));Assert.Equal(HttpStatusCode.Redirect,rejected.StatusCode);
+        Assert.Equal("/Access?refresh=true",rejected.Headers.Location?.OriginalString);
+        Assert.Equal(HttpStatusCode.Unauthorized,(await client.GetAsync("/api/v1/accounts")).StatusCode);
         await Login(client);Assert.Equal(HttpStatusCode.OK,(await client.GetAsync("/api/v1/accounts")).StatusCode);
         using var stranger=Client();var html=await stranger.GetStringAsync("/Access");Assert.DoesNotContain("name=\"Confirm\"",html);Assert.Contains("current-password",html);
         var replace=await stranger.PostAsync("/Access",new FormUrlEncodedContent(new Dictionary<string,string>{{"__RequestVerificationToken",Token(html)},{"Password","different-owner-password"},{"Confirm","different-owner-password"},{"Setup","true"}}));Assert.Equal(HttpStatusCode.OK,replace.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized,(await stranger.GetAsync("/api/v1/accounts")).StatusCode);
+    }
+    [Fact]public async Task LoginWithStaleCookieRecoversWithoutExecutingTheRejectedPost()
+    {
+        using var owner=Client();await Login(owner);
+        using var oldBrowser=Client();var staleToken=Token(await oldBrowser.GetStringAsync("/Access"));
+        using var freshBrowser=Client();
+        var rejected=await freshBrowser.PostAsync("/Access",new FormUrlEncodedContent(new Dictionary<string,string>{{"__RequestVerificationToken",staleToken},{"Password","synthetic-owner-password"},{"Setup","false"}}));
+        Assert.Equal(HttpStatusCode.Redirect,rejected.StatusCode);
+        Assert.Equal("/Access?refresh=true",rejected.Headers.Location?.OriginalString);
+        Assert.Equal(HttpStatusCode.Unauthorized,(await freshBrowser.GetAsync("/api/v1/accounts")).StatusCode);
+        var page=await freshBrowser.GetStringAsync(rejected.Headers.Location);
+        Assert.Contains("A página de entrada foi atualizada",WebUtility.HtmlDecode(page));
+        var accepted=await freshBrowser.PostAsync("/Access",new FormUrlEncodedContent(new Dictionary<string,string>{{"__RequestVerificationToken",Token(page)},{"Password","synthetic-owner-password"},{"Setup","false"}}));
+        Assert.Equal(HttpStatusCode.Redirect,accepted.StatusCode);Assert.Equal("/",accepted.Headers.Location?.OriginalString);
+        Assert.Equal(HttpStatusCode.OK,(await freshBrowser.GetAsync("/")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,(await freshBrowser.GetAsync("/assistente")).StatusCode);
     }
     [Fact]public async Task AuthenticatedApiWritesRequireAntiforgeryAndPersistData()
     {
@@ -58,7 +77,7 @@ public sealed class WebSecurityTests : IAsyncLifetime
     [Fact]public async Task AllMvpPagesRenderForTheOwner()
     {
         using var client=Client();await Login(client);
-        foreach(var pair in new[]{("/","Visão geral"),("/movimentos","Movimentos"),("/contas","As tuas contas"),("/categorias","Categorias"),("/dados","Dados e cópias"),("/extratos","Extratos")})
+        foreach(var pair in new[]{("/","Visão geral"),("/movimentos","Movimentos"),("/contas","As tuas contas"),("/categorias","Categorias"),("/dados","Dados e cópias"),("/extratos","Extratos"),("/assistente","Assistente")})
         {
             var response=await client.GetAsync(pair.Item1);Assert.Equal(HttpStatusCode.OK,response.StatusCode);
             var html=WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());Assert.Contains(pair.Item2,html);Assert.DoesNotContain("Não foi possível concluir a operação.",html);

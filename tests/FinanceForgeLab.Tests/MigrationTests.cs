@@ -60,6 +60,40 @@ public sealed class MigrationTests : IDisposable
     }
 
     [Fact]
+    public async Task MovementListRetainsOriginalDetailAfterCategoryRenamingWithoutInventingDescriptions()
+    {
+        var (package, backup) = Fixture();
+        await using (var db = FinanceDb.Open(DbPath))
+        {
+            await db.Database.MigrateAsync();
+            await new LegacyMigrator(db).RunAsync(package, "package-1", backup, "Simulation");
+            var parent = await db.Categories.SingleAsync(c => c.ParentId == null);
+            var child = await db.Categories.SingleAsync(c => c.ParentId != null);
+            parent.Name = "Habitação"; child.Name = "Serviços domésticos"; await db.SaveChangesAsync();
+        }
+        var service = new FinanceService(() => FinanceDb.Open(DbPath));
+        var page = await service.MovementsAsync(new() { PageSize = 10 });
+        Assert.Equal(3, page.Total);
+        Assert.All(page.Rows, row =>
+        {
+            Assert.Equal("Casa", row.OriginalCategory); Assert.Equal("Água", row.OriginalSubcategory);
+            Assert.Equal("Habitação", row.ParentCategory); Assert.Equal("Serviços domésticos", row.Category);
+        });
+        var blank = Assert.Single(page.Rows, row => row.Date == new DateOnly(2012, 2, 29));
+        Assert.Null(blank.Description); Assert.Null(blank.Notes);
+        Assert.All(page.Rows.Where(row => row.Id != blank.Id), row => Assert.Equal("d'Água e ação", row.Description));
+        var ascending = await service.MovementsAsync(new() { Sort = MovementSort.Description, Descending = false });
+        Assert.Equal(blank.Id, ascending.Rows[0].Id); Assert.Equal("Água", ascending.Rows[0].DisplayDescription);
+        var descending = await service.MovementsAsync(new() { Sort = MovementSort.Description, Descending = true });
+        Assert.Equal(blank.Id, descending.Rows[^1].Id);
+        var csv = await service.ExportCsvAsync(new() { Sort = MovementSort.Description, Descending = true });
+        Assert.StartsWith("2012-02-29;", csv.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1]);
+        await using var check = FinanceDb.Open(DbPath);
+        Assert.Equal(3, await check.Transactions.CountAsync());
+        Assert.Equal("Água", JsonSerializer.Deserialize<Dictionary<string, string?>>((await check.SourceRecords.SingleAsync(r => r.Table == "SubCategoria")).RawJson)!["Descricao"]);
+    }
+
+    [Fact]
     public async Task IdenticalRerunAddsNoOperationalRowsOrArchiveDuplicates()
     {
         var (p, backup) = Fixture();

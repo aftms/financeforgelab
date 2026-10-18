@@ -7,8 +7,10 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#102f2b" />
     <title>@(Model.FirstAccess ? "O teu espaço começa aqui" : "Bem-vindo de volta") · FinanceForgeLab</title>
+    <script src="/theme.js" asp-append-version="true"></script>
     <link rel="icon" type="image/png" href="/brand/financeforge-family.png" />
     <link rel="stylesheet" href="/access.css" asp-append-version="true" />
+    <link rel="stylesheet" href="/themes.css" asp-append-version="true" />
     <script src="/access.js" asp-append-version="true" defer></script>
 </head>
 <body>
@@ -32,7 +34,7 @@
             <div class="story-footer"><span>Feito para o teu dia a dia.</span><span class="footer-line"></span><span>Pessoal. Familiar. Teu.</span></div>
         </section>
         <section class="access-panel" aria-labelledby="form-title">
-            <div class="panel-top"><span class="local-badge"><span></span> O teu espaço privado</span><span class="setup-label">@(Model.FirstAccess ? "PRIMEIRO ACESSO" : "BEM-VINDO DE VOLTA")</span></div>
+            <div class="panel-top"><span class="local-badge"><span></span> O teu espaço privado</span><label class="theme-picker"><span aria-hidden="true">◐</span><select data-theme-selector aria-label="Tema da aplicação"><option value="light">Claro</option><option value="dark">Escuro</option><option value="system">Sistema</option></select></label></div>
             <div class="form-content">
                 <div class="form-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg></div>
                 <p class="eyebrow form-eyebrow">@(Model.FirstAccess ? "VAMOS COMEÇAR" : "CONTINUA A TUA HISTÓRIA")</p>

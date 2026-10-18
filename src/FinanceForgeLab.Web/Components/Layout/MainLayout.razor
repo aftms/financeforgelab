@@ -5,10 +5,16 @@
 <nav aria-label="Navegação principal"><span class="nav-label">O TEU DIA A DIA</span>
 <NavLink href="/" Match="NavLinkMatch.All"><span aria-hidden="true">◫</span> Visão geral</NavLink>
 <NavLink href="/movimentos"><span aria-hidden="true">⇄</span> Movimentos</NavLink>
-<NavLink href="/contas"><span aria-hidden="true">▤</span> Contas</NavLink>
+<NavLink href="/recorrentes"><span aria-hidden="true">↻</span> Despesas Recorrentes</NavLink>
+<NavLink href="/pendencias"><span aria-hidden="true">☷</span> Pendências</NavLink>
+<NavLink href="/assistente"><span aria-hidden="true">✧</span> Assistente</NavLink>
+<NavLink href="/extratos"><span aria-hidden="true">⇩</span> Importar extratos</NavLink>
+<NavLink href="/compras"><span aria-hidden="true">▤</span> Compras e pagamentos</NavLink>
+<NavLink href="/reembolsos"><span aria-hidden="true">↩</span> Reembolsos a receber</NavLink>
+<span class="nav-label nav-spacer">ORGANIZAÇÃO</span>
 <NavLink href="/categorias"><span aria-hidden="true">◇</span> Categorias</NavLink>
-<span class="nav-label nav-spacer">ORGANIZAÇÃO</span><NavLink href="/extratos"><span aria-hidden="true">⇩</span> Extratos</NavLink><NavLink href="/dados"><span aria-hidden="true">▧</span> Dados e cópias</NavLink></nav>
+<NavLink href="/contas"><span aria-hidden="true">▤</span> Contas</NavLink><NavLink href="/dados"><span aria-hidden="true">▧</span> Dados e cópias</NavLink><NavLink href="/manual"><span aria-hidden="true">?</span> Manual e procedimentos</NavLink></nav>
 <div class="sidebar-bottom"><div class="local-card"><span class="status-dot"></span><strong>O teu espaço, local.</strong><p>Os dados ficam neste computador.</p></div>
 <form action="/Access?handler=Logout" method="post" data-enhance="false"><AntiforgeryToken/><button class="logout" type="submit">Terminar sessão <span>↗</span></button></form></div></aside>
-<div class="main-shell"><header class="topbar"><span>FINANÇAS COM MAIS CLAREZA</span><span class="topbar-right"><span class="status-dot"></span> Utilização local <span class="avatar" title="Proprietário">P</span></span><form class="mobile-exit" action="/Access?handler=Logout" method="post" data-enhance="false"><AntiforgeryToken/><button type="submit" aria-label="Terminar sessão">Sair ↗</button></form></header><main class="main-content">@Body</main><footer class="app-footer">FinanceForgeLab <span>Um registo de cada vez.</span></footer></div></div>
+<div class="main-shell"><header class="topbar"><span>FINANÇAS COM MAIS CLAREZA</span><span class="topbar-right"><span class="local-status"><span class="status-dot"></span> Utilização local</span><ThemePicker/><span class="avatar" title="Proprietário">P</span></span><form class="mobile-exit" action="/Access?handler=Logout" method="post" data-enhance="false"><AntiforgeryToken/><button type="submit" aria-label="Terminar sessão">Sair ↗</button></form></header><main class="main-content">@Body</main><footer class="app-footer">FinanceForgeLab <span>Um registo de cada vez.</span></footer></div></div>
 <div id="blazor-error-ui" role="alert">Ocorreu um erro. <a href="">Atualizar a aplicação</a><button class="dismiss" aria-label="Fechar">×</button></div>

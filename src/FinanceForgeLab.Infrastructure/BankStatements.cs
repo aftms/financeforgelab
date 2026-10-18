@@ -10,16 +10,20 @@ namespace FinanceForgeLab.Infrastructure;
 public sealed record BankPdfLine(int Page, int Number, string Text, string[] Cells);
 public sealed class BankStatement
 {
+    public string BankName { get; set; } = "novobanco";
+    public string AccountHolder { get; set; } = "";
     public string Sha256 { get; set; } = "";
     public string ReaderVersion { get; set; } = "novobanco-1";
     public int Pages { get; set; }
     public List<StatementAccount> Accounts { get; set; } = [];
     public List<string> Errors { get; set; } = [];
+    public List<string> Notices { get; set; } = [];
     public bool Valid => Errors.Count == 0 && Accounts.Count > 0 && Accounts.All(a => a.Errors.Count == 0);
 }
 public sealed class StatementAccount
 {
     public string Reference { get; set; } = "";
+    public List<string> ReferenceAliases { get; set; } = [];
     public string Name { get; set; } = "";
     public DateOnly From { get; set; }
     public DateOnly To { get; set; }
@@ -96,7 +100,7 @@ public static class BankPdfContent
                                 var fullText = Join(ordered);
                                 // The bank indents continuation-page tables. Anchor the six
                                 // columns to the first "Data" label instead of the page edge.
-                                if (fullText.Contains("Descritivo", StringComparison.OrdinalIgnoreCase) && fullText.Contains("Saldo", StringComparison.OrdinalIgnoreCase)) columnOffset = ordered[0].X - .052;
+                                if (fullText.Contains("Descritivo", StringComparison.OrdinalIgnoreCase) && fullText.Contains("Saldo", StringComparison.OrdinalIgnoreCase)) columnOffset = ordered.First(g => !string.IsNullOrWhiteSpace(g.Text)).X - .052;
                                 for (var c = 0; c < 6; c++) cells[c] = Join(ordered.Where(g => Column(g.X - columnOffset) == c));
                                 lines.Add(new(p + 1, ++number, fullText, cells));
                             }
@@ -141,7 +145,7 @@ public static partial class NovoBancoStatementReader
         {
             var normalized = Fold(line.Text);
             if (line.Page == footerPage) continue;
-            if (normalized.StartsWith("NOVO BANCO, S.A., COM SEDE", StringComparison.Ordinal) || normalized.StartsWith("O NOVO BANCO, S.A. E UMA ENTIDADE", StringComparison.Ordinal) || normalized.StartsWith("SEDE: CAMPUS DO NOVOBANCO", StringComparison.Ordinal)) { footerPage = line.Page; continue; }
+            if (normalized.StartsWith("LINHA DIRETA |", StringComparison.Ordinal) || normalized.StartsWith("NOVO BANCO, S.A., COM SEDE", StringComparison.Ordinal) || normalized.StartsWith("O NOVO BANCO, S.A. E UMA ENTIDADE", StringComparison.Ordinal) || normalized.StartsWith("SEDE: CAMPUS DO NOVOBANCO", StringComparison.Ordinal)) { footerPage = line.Page; continue; }
             var header = AccountHeader().Match(line.Text);
             if (header.Success)
             {
@@ -180,11 +184,21 @@ public static partial class NovoBancoStatementReader
                 try
                 {
                     var date = Date(dates.Groups["date"].Value, current); var valueDate = Date(dates.Groups["value"].Value, current);
-                    var debit = string.IsNullOrWhiteSpace(cells[3]) ? 0 : Amount(cells[3]);
+                    var description = cells[2];
+                    var debitCell = cells[3];
+                    // Long merchant references can cross the fixed description boundary.
+                    // Preserve their final letters, while requiring a complete monetary token.
+                    var spill = Regex.Match(debitCell, @"^(?<tail>.+)\s+(?<amount>-?(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2})$");
+                    if (spill.Success) { description += spill.Groups["tail"].Value; debitCell = spill.Groups["amount"].Value; }
+                    else if (!string.IsNullOrWhiteSpace(cells[4]) && !string.IsNullOrWhiteSpace(debitCell) && !debitCell.Any(char.IsDigit)) { description += debitCell; debitCell = ""; }
+                    var debit = string.IsNullOrWhiteSpace(debitCell) ? 0 : Amount(debitCell);
                     var credit = string.IsNullOrWhiteSpace(cells[4]) ? 0 : Amount(cells[4]);
-                    if ((debit == 0) == (credit == 0) || debit < 0 || credit < 0) throw new FormatException();
-                    if (date < current.From || date > current.To) throw new FormatException();
-                    pending = new() { Page = line.Page, Line = line.Number, Date = date, ValueDate = valueDate, Description = cells[2], Units = checked(credit - debit), BalanceUnits = Amount(cells[5]) };
+                    if ((debit > 0 && credit > 0) || debit < 0 || credit < 0 || (debit == 0 && credit == 0 && string.IsNullOrWhiteSpace(debitCell) && string.IsNullOrWhiteSpace(cells[4]))) throw new FormatException();
+                    // Card settlement rows at the start of a period can retain the
+                    // preceding day's transaction date. Balances and totals still verify every row.
+                    var earliest = description.Contains("Cartão", StringComparison.OrdinalIgnoreCase) ? current.From.AddDays(-7) : current.From.AddDays(-1);
+                    if (date < earliest || date > current.To) throw new FormatException();
+                    pending = new() { Page = line.Page, Line = line.Number, Date = date, ValueDate = valueDate, Description = description, Units = checked(credit - debit), BalanceUnits = Amount(cells[5]) };
                 }
                 catch (Exception e) when (e is FormatException or OverflowException or ArgumentException)
                 { current.Errors.Add($"Página {line.Page}, linha {line.Number}: data, débito, crédito ou saldo inválido."); }
@@ -229,7 +243,7 @@ public static partial class NovoBancoStatementReader
         return year == 0 ? throw new FormatException() : new(year, int.Parse(fields[1], CultureInfo.InvariantCulture), int.Parse(fields[0], CultureInfo.InvariantCulture));
     }
     private static string Fold(string value) => new string(value.Normalize(NormalizationForm.FormD).Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray()).ToUpperInvariant();
-    [GeneratedRegex(@"^(?<name>CONTA .+?)\s+n[º°o]\s*(?<ref>\d{4}\s*\d{4}\s*\d{4})\s+de\s+(?<from>\d{2}\.\d{2}\.\d{4})\s+a\s+(?<to>\d{2}\.\d{2}\.\d{4})$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^(?<name>(?:CONTA|POUP PROGRAMADA) .+?)\s+n[º°o]\s*(?<ref>\d{4}\s*\d{4}\s*\d{4})\s+de\s+(?<from>\d{2}\.\d{2}\.\d{4})\s+a\s+(?<to>\d{2}\.\d{2}\.\d{4})$", RegexOptions.IgnoreCase)]
     private static partial Regex AccountHeader();
     [GeneratedRegex(@"^\d{2}\.\d{2}\.\d{2}$")]
     private static partial Regex ShortDate();

@@ -7,10 +7,23 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinanceForgeLab.Infrastructure;
 
-public sealed class FinanceService(Func<FinanceDb> open)
+public sealed partial class FinanceService(Func<FinanceDb> open)
 {
     public async Task<List<Category>> CategoriesAsync() { await using var db = open(); return await db.Categories.AsNoTracking().OrderBy(x => x.Name).ToListAsync(); }
     public async Task<List<Person>> PeopleAsync() { await using var db = open(); return await db.People.AsNoTracking().OrderBy(x => x.Name).ToListAsync(); }
+    public async Task<List<int>> MovementYearsAsync() { await using var db = open(); return await db.Transactions.AsNoTracking().Select(t => t.Date.Year).Union(db.IndividualMovements.Select(m=>m.Date.Year)).Distinct().OrderByDescending(y => y).ToListAsync(); }
+
+    public async Task<Dictionary<long, int>> InactiveCategoryUsageAsync()
+    {
+        await using var db = open();
+        return await (from p in db.Postings
+                      join t in db.Transactions on p.TransactionId equals t.Id
+                      join c in db.Categories on p.CategoryId equals c.Id
+                      where !c.Active && t.Status == "Confirmed"
+                      group t.Id by c.Id into g
+                      select new { Id = g.Key, Count = g.Distinct().Count() })
+            .ToDictionaryAsync(x => x.Id, x => x.Count);
+    }
 
     private static IQueryable<MovementRow> Query(FinanceDb db, MovementFilter f)
     {
@@ -23,24 +36,56 @@ public sealed class FinanceService(Func<FinanceDb> open)
                     join c in db.Categories on p.CategoryId equals c.Id into categoryGroup from c in categoryGroup.DefaultIfEmpty()
                     join root in db.Categories on c.ParentId equals root.Id into parentGroup from root in parentGroup.DefaultIfEmpty()
                     join person in db.People on t.PersonId equals person.Id into personGroup from person in personGroup.DefaultIfEmpty()
-                    where (t.Kind != MovementKind.Transfer || p.AmountUnits < 0)
+                    where (t.Kind != MovementKind.Transfer || p.AmountUnits < 0)&&!db.IndividualMovements.Any(m=>m.PaymentTransactionId==t.Id)
                     select new MovementRow { Id=t.Id, Version=t.Version, Date=t.Date, Kind=t.Kind, Description=t.Description, Notes=t.Notes, AccountId=p.AccountId, Account=a.Name,
                         CategoryId=p.CategoryId, Category=c.Name, ParentCategory=root.Name, PersonId=t.PersonId, Person=person.Name, Units=p.AmountUnits, Origin=t.Origin, Status=t.Status };
         if (!f.IncludeVoided) query = query.Where(x => x.Status == "Confirmed");
+        if(f.TransactionId is {} transactionId)query=query.Where(x=>x.Id==transactionId);
         if (f.From is not null) query = query.Where(x => x.Date >= f.From);
         if (f.To is not null) query = query.Where(x => x.Date <= f.To);
         if (f.Kind is not null) query = query.Where(x => x.Kind == f.Kind);
         if (f.PersonId is > 0) query = query.Where(x => x.PersonId == f.PersonId);
         if (f.AccountId == -1) query = query.Where(x => x.AccountId == null);
         else if (f.AccountId is > 0) query = query.Where(x => db.Postings.Any(p => p.TransactionId == x.Id && p.AccountId == f.AccountId));
-        if (f.CategoryId is > 0) query = query.Where(x => x.CategoryId == f.CategoryId || db.Categories.Any(c => c.Id == x.CategoryId && c.ParentId == f.CategoryId));
+        // Category zero is filtered after invoice allocations and individual movements are expanded.
+        if (f.CategoryId is > 0) query = query.Where(x =>
+            !db.PurchaseEvidence.Any(e=>e.TransactionId==x.Id&&!e.HasSourceConflict&&e.Units!=null&&(e.FinancialUnits??e.Units)==-x.Units&&PurchaseAllocationMath.ContainsCategory(e.CategoryAllocationsJson,0,e.Units.Value,-x.Units))
+                && (x.CategoryId == f.CategoryId || db.Categories.Any(c => c.Id == x.CategoryId && c.ParentId == f.CategoryId))
+            || db.PurchaseEvidence.Any(e=>e.TransactionId==x.Id&&!e.HasSourceConflict&&e.Units!=null&&(e.FinancialUnits??e.Units)==-x.Units&&
+                (PurchaseAllocationMath.ContainsCategory(e.CategoryAllocationsJson,f.CategoryId.Value,e.Units.Value,-x.Units)||db.Categories.Any(c=>c.ParentId==f.CategoryId&&PurchaseAllocationMath.ContainsCategory(e.CategoryAllocationsJson,c.Id,e.Units.Value,-x.Units)))));
         return query;
     }
     public async Task<MovementPage> MovementsAsync(MovementFilter f)
     {
-        await using var db = open(); var query = Query(db, f); var total = await query.CountAsync();
-        var size = Math.Clamp(f.PageSize, 10, 100); var page = Math.Clamp(f.Page, 1, Math.Max(1, (int)Math.Ceiling(total / (double)size)));
-        return new(await query.OrderByDescending(x => x.Date).ThenByDescending(x => x.Id).Skip((page - 1) * size).Take(size).ToListAsync(), total, page, size);
+        await using var db = open();
+        var rows=await EntryRowsAsync(db,f);var total=rows.Count;
+        var size=Math.Clamp(f.PageSize,10,100);var page=Math.Clamp(f.Page,1,Math.Max(1,(int)Math.Ceiling(total/(double)size)));
+        return new(await WithSourcesAsync(db,rows.Skip((page-1)*size).Take(size).ToList()),total,page,size);
+    }
+    private static async Task<List<MovementRow>> WithOriginalClassificationAsync(FinanceDb db, List<MovementRow> rows)
+    {
+        rows=await WithPurchaseClassificationAsync(db,rows);
+        var ids = rows.Where(r => r.Origin == "Legacy").Select(r => r.Id).ToList();
+        if (ids.Count == 0) return rows;
+        var sources = await (from i in db.ImportRows.AsNoTracking()
+                             join s in db.SourceRecords.AsNoTracking() on i.SourceRecordId equals s.Id
+                             where i.TransactionId != null && ids.Contains(i.TransactionId.Value) && s.Table == "Movimento"
+                             orderby i.Id
+                             select new { TransactionId = i.TransactionId!.Value, s.SnapshotId, s.RawJson }).ToListAsync();
+        var snapshots = sources.Select(s => s.SnapshotId).Distinct().ToList();
+        var definitions = await db.SourceRecords.AsNoTracking().Where(s => snapshots.Contains(s.SnapshotId) && (s.Table == "Categoria" || s.Table == "SubCategoria")).ToListAsync();
+        var names = definitions.ToDictionary(s => (s.SnapshotId, s.Table, s.LegacyId), s => JsonSerializer.Deserialize<Dictionary<string, string?>>(s.RawJson)!.GetValueOrDefault("Descricao"));
+        var originals = sources.GroupBy(s => s.TransactionId).ToDictionary(g => g.Key, g => g.First());
+        return rows.Select(row =>
+        {
+            if (!originals.TryGetValue(row.Id, out var source)) return row;
+            var fields = JsonSerializer.Deserialize<Dictionary<string, string?>>(source.RawJson)!;
+            return row with
+            {
+                OriginalCategory = names.GetValueOrDefault((source.SnapshotId, "Categoria", fields.GetValueOrDefault("IdCategoria") ?? "")),
+                OriginalSubcategory = names.GetValueOrDefault((source.SnapshotId, "SubCategoria", fields.GetValueOrDefault("IdSubCategoria") ?? ""))
+            };
+        }).ToList();
     }
     public async Task<MovementForm> MovementAsync(long id)
     {
@@ -52,8 +97,9 @@ public sealed class FinanceService(Func<FinanceDb> open)
             AccountId = from.AccountId, CategoryId = from.CategoryId, Amount = t.Kind == MovementKind.Income ? Money.FromUnits(from.AmountUnits) : -Money.FromUnits(from.AmountUnits),
             DestinationAccountId = t.Kind == MovementKind.Transfer ? posts.Single(x => x.AmountUnits > 0).AccountId : null };
     }
-    public async Task<long> SaveMovementAsync(MovementForm input)
+    public async Task<long> SaveMovementAsync(MovementForm input, bool preventPossibleDuplicates = false)
     {
+        if(input.IndividualId!=null||input.SourceCategoryId!=null)return await SaveIndividualAsync(input);
         Validate(input); var units = Units(input.Amount);
         if (units == 0) throw new FinanceRuleException("O montante deve ser diferente de zero.");
         if (units == long.MinValue && input.Kind != MovementKind.Income) throw new FinanceRuleException("O montante excede o limite permitido.");
@@ -62,6 +108,15 @@ public sealed class FinanceService(Func<FinanceDb> open)
         await using var db = open(); await using var tx = await db.Database.BeginTransactionAsync();
         var action = "SaveMovement"; var hash = Payload(input);
         if (await Receipt(db, input.RequestId, action, hash) is long existing) return existing;
+        if (preventPossibleDuplicates && input.Id == 0)
+        {
+            var firstDate=DateOnly.FromDayNumber(Math.Max(0,input.Date.DayNumber-7));var lastDate=DateOnly.FromDayNumber(Math.Min(DateOnly.MaxValue.DayNumber,input.Date.DayNumber+7));
+            var signed=input.Kind==MovementKind.Income?units:-units;
+            if(await (from t0 in db.Transactions join p0 in db.Postings on t0.Id equals p0.TransactionId
+                where t0.Status=="Confirmed"&&t0.Date>=firstDate&&t0.Date<=lastDate&&p0.AmountUnits==signed
+                &&(p0.AccountId==input.AccountId||p0.AccountId==null||input.AccountId==null)
+                select t0.Id).AnyAsync())throw new FinanceRuleException("Existe um possível movimento correspondente por valor, conta e data próxima. Associa a fonte ou pede confirmação antes de criar outro.");
+        }
         FinancialTransaction t;
         object? before = null;
         List<Posting> posts;
@@ -75,6 +130,7 @@ public sealed class FinanceService(Func<FinanceDb> open)
             t = await db.Transactions.SingleOrDefaultAsync(x => x.Id == input.Id) ?? throw new FinanceRuleException("Movimento não encontrado.");
             if (t.Version != input.Version) throw new FinanceRuleException("O movimento foi alterado noutra sessão. Volta a abri-lo.");
             if (t.Status != "Confirmed" || t.Kind is MovementKind.Opening or MovementKind.Adjustment) throw new FinanceRuleException("Este movimento não pode ser editado aqui.");
+            if(await db.IndividualMovements.AnyAsync(m=>m.PaymentTransactionId==t.Id)||await db.PurchaseEvidence.AnyAsync(e=>e.TransactionId==t.Id&&e.CategoryAllocationsJson!="[]"&&e.CategoryAllocationsJson!=""))throw new FinanceRuleException("Abre o movimento individual na lista para editar apenas essa linha.");
             posts = await db.Postings.Where(x => x.TransactionId == t.Id).ToListAsync();
             before = new { Transaction = JsonSerializer.SerializeToElement(t), Postings = JsonSerializer.SerializeToElement(posts) };
             t.Version++;
@@ -88,7 +144,7 @@ public sealed class FinanceService(Func<FinanceDb> open)
             return account;
         }
         await CheckAccount(input.AccountId);
-        if (input.AccountId is null && (t.Origin != "Legacy" || input.Kind == MovementKind.Transfer)) throw new FinanceRuleException("Seleciona uma conta.");
+        if (input.AccountId is null && (t.Origin is not ("Legacy" or "Purchase") || input.Kind == MovementKind.Transfer)) throw new FinanceRuleException("Seleciona uma conta.");
         if (input.PersonId is not null && !await db.People.AnyAsync(x => x.Id == input.PersonId && x.HouseholdId == t.HouseholdId)) throw new FinanceRuleException("Pessoa inválida.");
         Category? category = null;
         if (input.Kind == MovementKind.Transfer)
@@ -104,6 +160,8 @@ public sealed class FinanceService(Func<FinanceDb> open)
             if (category.ParentId is long parentId && !await db.Categories.AnyAsync(x => x.Id == parentId && x.Active) && !posts.Any(x => x.CategoryId == category.Id))
                 throw new FinanceRuleException("A categoria de raiz está inativa.");
         }
+        var preserveTransferDates = t.Kind == MovementKind.Transfer && input.Kind == MovementKind.Transfer && t.Date == input.Date &&
+            posts.Count == 2 && posts[0].AccountId == input.AccountId && posts[1].AccountId == input.DestinationAccountId;
         t.Date = input.Date; t.Kind = input.Kind; t.Description = input.Description.Trim(); t.Notes = input.Notes; t.PersonId = input.PersonId;
         await db.SaveChangesAsync();
         // Keep existing posting IDs during edits so external references remain stable.
@@ -112,7 +170,7 @@ public sealed class FinanceService(Func<FinanceDb> open)
         if (posts.Count > required) { db.RemoveRange(posts.Skip(required)); posts = posts.Take(required).ToList(); }
         for (var i = 0; i < posts.Count; i++)
         {
-            var post = posts[i]; post.Date = input.Date; post.Currency = "EUR";
+            var post = posts[i]; if (!preserveTransferDates) post.Date = input.Date; post.Currency = "EUR";
             post.AccountId = i == 0 ? input.AccountId : input.DestinationAccountId;
             post.CategoryId = input.Kind == MovementKind.Transfer ? null : category!.Id;
             post.AmountUnits = input.Kind == MovementKind.Income ? units : i == 0 ? checked(-units) : units;
@@ -129,6 +187,7 @@ public sealed class FinanceService(Func<FinanceDb> open)
         var t = await db.Transactions.SingleOrDefaultAsync(x => x.Id == id) ?? throw new FinanceRuleException("Movimento inexistente.");
         if (t.Version != version || t.Status != "Confirmed") throw new FinanceRuleException("O movimento foi alterado. Atualiza a lista.");
         if (t.Kind == MovementKind.Opening) throw new FinanceRuleException("A abertura é gerida na conta.");
+        if(await db.IndividualMovements.AnyAsync(m=>m.PaymentTransactionId==t.Id)||await db.PurchaseEvidence.AnyAsync(e=>e.TransactionId==t.Id&&e.CategoryAllocationsJson!="[]"&&e.CategoryAllocationsJson!=""))throw new FinanceRuleException("Escolhe o movimento individual na lista para anular apenas essa linha.");
         var before = JsonSerializer.SerializeToElement(t); t.Status = "Voided"; t.Version++;
         AddAudit(db, "Transaction", id, "Void", before, t); AddReceipt(db, requestId, "VoidMovement", hash, id);
         await db.SaveChangesAsync(); await tx.CommitAsync();
@@ -136,11 +195,14 @@ public sealed class FinanceService(Func<FinanceDb> open)
     public async Task<List<AccountSummary>> AccountsAsync()
     {
         await using var db = open(); var accounts = await db.Accounts.AsNoTracking().OrderBy(x => x.Name).ToListAsync(); var result = new List<AccountSummary>();
+        var individual=await IndividualRowsAsync(db);
         foreach (var account in accounts)
         {
-            var posts = from p in db.Postings join t in db.Transactions on p.TransactionId equals t.Id where p.AccountId == account.Id && t.Status == "Confirmed" select p;
+            var posts = from p in db.Postings join t in db.Transactions on p.TransactionId equals t.Id where p.AccountId == account.Id && t.Status == "Confirmed"&&!db.IndividualMovements.Any(m=>m.PaymentTransactionId==t.Id) select p;
             var values = await posts.Where(x => account.BalanceStartDate != null && x.Date >= account.BalanceStartDate).Select(x => x.AmountUnits).ToListAsync();
-            result.Add(new(account, Sum(values), await posts.CountAsync(x => account.BalanceStartDate != null && x.Date < account.BalanceStartDate)));
+            var related=individual.Where(r=>r.Status=="Confirmed"&&(r.AccountId==account.Id||r.DestinationAccountId==account.Id)).ToList();
+            values.AddRange(related.Where(r=>account.BalanceStartDate!=null&&r.Date>=account.BalanceStartDate).Select(r=>r.AccountId==account.Id?r.Units:-r.Units));
+            result.Add(new(account, Sum(values), await posts.CountAsync(x => account.BalanceStartDate != null && x.Date < account.BalanceStartDate)+related.Count(r=>account.BalanceStartDate!=null&&r.Date<account.BalanceStartDate)));
         }
         return result;
     }
@@ -193,23 +255,83 @@ public sealed class FinanceService(Func<FinanceDb> open)
         await db.SaveChangesAsync(); AddAudit(db, "Category", c.Id, "SaveCategory", before, c);
         AddReceipt(db, input.RequestId, "SaveCategory", hash, c.Id); await db.SaveChangesAsync(); await tx.CommitAsync(); return c.Id;
     }
+    // Moving a leaf preserves its identity and all payment/document references.
+    public async Task MoveSubcategoryAsync(long id,long parentId,int version,Guid requestId)
+    {
+        await using var db=open();await using var tx=await db.Database.BeginTransactionAsync();
+        var hash=Payload(new{id,parentId,version});
+        if(await Receipt(db,requestId,"MoveSubcategory",hash) is not null)return;
+        var household=await Household(db);
+        var category=await db.Categories.SingleOrDefaultAsync(c=>c.Id==id&&c.HouseholdId==household)??throw new FinanceRuleException("Subcategoria não encontrada.");
+        var parent=await db.Categories.SingleOrDefaultAsync(c=>c.Id==parentId&&c.HouseholdId==household);
+        if(category.Version!=version)throw new FinanceRuleException("A categoria foi alterada. Volta a abri-la.");
+        if(category.ParentId is null||await db.Categories.AnyAsync(c=>c.ParentId==id)||parent is null||parent.ParentId is not null||!parent.Active||parent.Kind!=category.Kind)
+            throw new FinanceRuleException("Escolhe uma categoria principal ativa do mesmo tipo para esta subcategoria.");
+        if((await db.Categories.Where(c=>c.Id!=id&&c.ParentId==parentId).Select(c=>c.Name).ToListAsync()).Any(name=>string.Equals(name,category.Name,StringComparison.OrdinalIgnoreCase)))
+            throw new FinanceRuleException("Já existe uma subcategoria com este nome no destino.");
+        var before=JsonSerializer.SerializeToElement(category);
+        category.ParentId=parentId;category.Version++;
+        await db.SaveChangesAsync();AddAudit(db,"Category",id,"MoveSubcategory",before,category);
+        AddReceipt(db,requestId,"MoveSubcategory",hash,id);await db.SaveChangesAsync();await tx.CommitAsync();
+    }
+
     public async Task<DashboardSummary> DashboardAsync(int? year)
     {
         await using var db = open();
-        var years = await db.Transactions.Where(x => x.Status == "Confirmed").Select(x => x.Date.Year).Distinct().OrderByDescending(x => x).ToListAsync();
+        var years = await db.Transactions.Where(x => x.Status == "Confirmed" && (x.Kind == MovementKind.Income || x.Kind == MovementKind.Expense)).Select(x => x.Date.Year).Union(db.IndividualMovements.Where(m=>m.Status=="Confirmed").Select(m=>m.Date.Year)).Distinct().OrderByDescending(x => x).ToListAsync();
         var selected = year ?? years.FirstOrDefault(DateTime.Today.Year);
-        var rows = await Query(db, new MovementFilter { From = new(selected, 1, 1), To = new(selected, 12, 31) }).ToListAsync();
+        if (!years.Contains(selected)) { years.Add(selected); years.Sort((a, b) => b.CompareTo(a)); }
+        var rows = await EntryRowsAsync(db, new MovementFilter { From = new(selected, 1, 1), To = new(selected, 12, 31) });
         var financial = rows.Where(x => x.Kind is MovementKind.Income or MovementKind.Expense).ToList();
         var months = Enumerable.Range(1, 12).Select(m => new MonthSummary(m, Sum(financial.Where(x => x.Date.Month == m && x.Kind == MovementKind.Income).Select(x => x.Units)),
             checked(-Sum(financial.Where(x => x.Date.Month == m && x.Kind == MovementKind.Expense).Select(x => x.Units))), financial.Count(x => x.Date.Month == m))).ToList();
-        var expense = financial.Where(x => x.Kind == MovementKind.Expense).GroupBy(x => x.ParentCategory ?? x.Category ?? "Por classificar")
-            .Select(g => new CategorySummary(g.Key, checked(-Sum(g.Select(x => x.Units))))).OrderByDescending(x => x.Units).Take(8).ToList();
-        var unassigned = await (from p in db.Postings join t in db.Transactions on p.TransactionId equals t.Id where p.AccountId == null && t.Status == "Confirmed" select p.Id).CountAsync();
-        return new(selected, years, Sum(months.Select(x => x.IncomeUnits)), Sum(months.Select(x => x.ExpenseUnits)), financial.Count, unassigned, months, expense, await AccountsAsync());
+        var categories = await db.Categories.AsNoTracking().ToDictionaryAsync(c=>c.Id);
+        CategorySummary CategoryTotal(long? id, long units)
+        {
+            var category = id is {} value ? categories.GetValueOrDefault(value) : null;
+            var root = category?.ParentId is {} parent ? categories.GetValueOrDefault(parent) : category;
+            return new(root?.Name ?? "Por classificar",units) {CategoryId=root?.Id};
+        }
+        var expense = financial.Where(x => x.Kind == MovementKind.Expense).SelectMany(x=>x.CategoryAllocations.Count>0?x.CategoryAllocations.Select(p=>CategoryTotal(p.CategoryId,p.Units)):[CategoryTotal(x.CategoryId,checked(-x.Units))])
+            .GroupBy(x=>new{x.CategoryId,x.Name}).Select(g=>new CategorySummary(g.Key.Name,Sum(g.Select(x=>x.Units))){CategoryId=g.Key.CategoryId}).OrderByDescending(x=>x.Units).ToList();
+        var unassigned = await (from p in db.Postings join t in db.Transactions on p.TransactionId equals t.Id where p.AccountId == null && t.Status == "Confirmed"&&!db.IndividualMovements.Any(m=>m.PaymentTransactionId==t.Id) select p.Id).CountAsync();
+        unassigned+=(await IndividualRowsAsync(db)).Count(m=>m.Status=="Confirmed"&&m.AccountId==null);
+        var coverage = await BankCoverageAsync(db, selected);
+        var pendingPurchases=PendingPurchases(db);
+        var yearFrom=new DateOnly(selected,1,1);var yearTo=new DateOnly(selected,12,31);
+        return new(selected, years, Sum(months.Select(x => x.IncomeUnits)), Sum(months.Select(x => x.ExpenseUnits)), financial.Count, unassigned, months, expense, await AccountsAsync())
+            { PendingBankRows = coverage.Pending, BankThrough = coverage.Through,
+              PendingPurchases=await pendingPurchases.CountAsync(e=>e.Date>=yearFrom&&e.Date<=yearTo),
+              UndatedPurchases=await pendingPurchases.CountAsync(e=>e.Date==null),
+              UnassignedExpenses=financial.Where(r=>r.Kind==MovementKind.Expense&&r.AccountId==null).Select(r=>r.EntryKey).Distinct().Count() };
+    }
+    private static async Task<(int Pending, DateOnly? Through)> BankCoverageAsync(FinanceDb db, int year)
+    {
+        var batches = await db.BankImports.AsNoTracking().Where(b => b.Status != "Voided").ToListAsync();
+        var documents = await db.BankDocuments.AsNoTracking().Select(d => new { d.Id, d.StatementJson }).ToDictionaryAsync(d => d.Id, d => JsonSerializer.Deserialize<BankStatement>(d.StatementJson)!);
+        var entries = (await db.BankImportEntries.AsNoTracking().Select(e => new { e.ImportId, e.Ordinal }).ToListAsync()).Select(e => (e.ImportId, e.Ordinal)).ToHashSet();
+        var confirmed = await db.Transactions.AsNoTracking().Where(t => t.Status == "Confirmed").Select(t => new { t.Id, t.Version }).ToDictionaryAsync(t => t.Id, t => t.Version);
+        var pending = 0; DateOnly? through = null;
+        foreach (var batch in batches)
+        {
+            var document = documents[batch.DocumentId]; var section = document.Accounts[batch.SectionIndex];
+            if (section.Rows.Any(r => r.Date.Year == year) && document.Errors.Count == 0 && section.Errors.Count == 0)
+                through = through is null || section.To > through ? section.To : through;
+            if (batch.Status != "Draft") continue;
+            var choices = string.IsNullOrEmpty(batch.ReviewJson) ? [] : JsonSerializer.Deserialize<BankImportReview>(batch.ReviewJson)!.Rows;
+            foreach (var row in section.Rows.Where(r => r.Date.Year == year && r.Units != 0))
+            {
+                var choice = choices.SingleOrDefault(c => c.Ordinal == row.Ordinal);
+                if (entries.Contains((batch.Id, row.Ordinal)) || choice?.Decision == "Exclude") continue;
+                if (choice?.Decision == "Link" && choice.ExistingTransactionId is {} id && confirmed.TryGetValue(id, out var version) && version == choice.ExistingVersion) continue;
+                pending++;
+            }
+        }
+        return (pending, through);
     }
     public async Task<string> ExportCsvAsync(MovementFilter filter)
     {
-        await using var db = open(); var rows = await Query(db, filter).OrderBy(x => x.Date).ThenBy(x => x.Id).ToListAsync();
+        await using var db = open();var rows=await EntryRowsAsync(db,filter);
         var csv = new StringBuilder("Data;Tipo;Descricao;Conta;Pessoa;Categoria;Subcategoria;MontanteEUR;Estado\r\n");
         static string Cell(string? text)
         {

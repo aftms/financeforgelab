@@ -1,0 +1,104 @@
+@page "/compras"
+@inject BankImportService Imports
+@inject FinanceService Finance
+@using System.Text.Json
+<PageTitle>Compras e pagamentos · FinanceForgeLab</PageTitle>
+<div class="page-heading"><div><span class="eyebrow">DAR CONTEXTO AOS MOVIMENTOS</span><h1>Compras e pagamentos</h1><p>Faturas, emails e outros comprovativos associados aos registos por categoria.</p></div><a class="button" href="/extratos">Importar extratos →</a></div>
+@if(message is not null){<div role="status" class="notice @(error?"error":"success")">@message</div>}
+@if(EvidenceRequested is not null){<p class="notice">Comprovativo associado aos registos por categoria. <a href="/compras">Consultar todos os comprovativos →</a></p>}
+<section class="panel purchase-inbox">
+<div class="panel-heading"><div><h2>Informação para conferir</h2><p>@FilteredEvidence.Count registos · @FilteredEvidence.Count(e=>pendingIds.Contains(e.Id)) por conferir. As categorias propostas já estão preenchidas.</p></div></div>
+<div class="statement-document-filters"><label>Serviço ou comerciante<select @bind="Channel" @bind:after="FilterChanged"><option value="">Todos</option>@foreach(var channel in allEvidence.Select(e=>e.Channel).Distinct().Order()){<option value="@channel">@channel</option>}</select></label>
+<label>Ano<select @bind="YearRequested" @bind:after="FilterChanged"><option value="">Todos os anos</option><option value="0">Sem data confirmada</option>@foreach(var year in allEvidence.Where(e=>e.Date!=null).Select(e=>e.Date!.Value.Year).Concat(YearRequested is >0?[YearRequested.Value]:Array.Empty<int>()).Distinct().OrderDescending()){<option value="@year">@year</option>}</select></label>
+<label class="checkbox-label"><input type="checkbox" @bind="ReviewOnly" @bind:after="FilterChanged"/> Apenas pendentes de revisão</label></div>
+@if(YearRequested is >0&&UndatedCount>0){<p class="hint">Existem @UndatedCount documentos sem data confirmada, fora deste filtro. <button type="button" class="button small" @onclick="ShowUndated">Ver documentos sem data →</button></p>}
+@if(YearRequested==0){<p class="hint">Estes documentos não têm uma data de compra identificada e não estão associados a nenhum ano.</p>}
+@if(coverage is {From:{} coverageFrom} report){<details class="purchase-coverage"><summary>Pagamentos sem fatura desde @coverageFrom.ToString("dd/MM/yyyy") · @report.Gaps.Count por conferir</summary><p class="hint">Extratos disponíveis até @report.To?.ToString("dd/MM/yyyy"). Compras em loja podem ter talões próprios; pagamentos indicados como possíveis carregamentos precisam de identificação.</p><div class="table-wrap"><table><thead><tr><th>Data</th><th>Conta / pessoa</th><th>Descrição</th><th>Montante</th></tr></thead><tbody>@foreach(var gap in report.Gaps){<tr><td>@gap.Date.ToString("dd/MM/yyyy")</td><td>@gap.Account · @gap.Person</td><td>@gap.Description @if(gap.PossibleTopUp){<small>Possível carregamento — por confirmar</small>}</td><td>@Format.Money(gap.Units)</td></tr>}</tbody></table></div></details>}
+@if(rows.Any(row=>pendingIds.Contains(row.Evidence.Id))){<p class="hint">Confere os dados e aprova para criar já o movimento. A conta pode ficar por associar até ser identificada. Os documentos e extratos que chegarem depois são cruzados com esse registo para evitar duplicações.</p>}
+@foreach(var row in rows)
+{
+    var e=row.Evidence;
+    var candidates=matches.GetValueOrDefault(e.Id)??[];
+    var documents=sources.Where(s=>s.EvidenceId==e.Id).ToList();
+    var similar=allEvidence.Where(r=>r.Id!=e.Id && e.Units is not null && r.Units==e.Units && r.Date==e.Date && string.Equals(r.Channel,e.Channel,StringComparison.OrdinalIgnoreCase)).ToList();
+    <article class="purchase-card" @key="e.Id">
+        <div class="purchase-summary"><div><small>@(e.Date?.ToString("dd/MM/yyyy")??"Data por confirmar") · @e.Channel · @e.Merchant</small><h3>@e.Description</h3>@if(e.OrderReference.Length>0){<small>@(documents.Any(d=>d.DocumentName==e.OrderReference)?"Ficheiro":"Encomenda") @e.OrderReference</small>}</div><strong class="amount">@(e.Units is {} amount?Format.Money(amount):"Valor por confirmar")</strong></div>
+        @if(e.ExpectedPaymentDate is {} paymentDate){<p class="hint">Débito previsto: @paymentDate.ToString("dd/MM/yyyy") · A data do documento é preservada.</p>}
+        @if(e.PaymentMethod=="Cancelled"){<p class="hint"><strong>Reserva ou compra cancelada sem cobrança.</strong> Os comprovativos e a anulação ficam no histórico.</p>} else if(e.PaymentMethod=="TopUp"){<p class="hint"><strong>Carregamento de cartão — transferência entre contas.</strong> Não é uma despesa adicional.</p>} else if(e.PaymentMethod=="StoredValue"){<p class="hint">Compra paga com saldo do Cartão Continente. O documento original discrimina a utilização de saldo e os descontos.</p>} else if(e.PaymentMethod=="Split")
+        {
+            <p class="hint"><strong>Encomenda com cobranças separadas.</strong> O total não é contado novamente.</p>
+            @foreach(var charge in allEvidence.Where(c=>c.ParentEvidenceId==e.Id)){<p class="hint">@charge.Description · @Format.Money(charge.Units??0) · @(charge.TransactionId is {} payment?$"Movimento #{payment}":"Por registar")</p>}
+        }
+        else if(e.FinancialUnits is {} financial&&financial!=e.Units){<p class="hint">@(financial==0?"Consumo de benefícios registado, sem criar uma despesa bancária.":$"Total da fatura distinto do pagamento bancário: {Format.Money(financial)}. O restante foi pago com Cartão Continente.")</p>}
+        @if(e.ParentEvidenceId is {} parentId){<p class="hint">Cobrança de um envio da encomenda @allEvidence.FirstOrDefault(p=>p.Id==parentId)?.OrderReference.</p>}
+        @if(pendingIds.Contains(e.Id)&&e.ReviewNotes.Length>0){<p class="purchase-warning">@e.ReviewNotes</p>}
+        @if(e.HasSourceConflict){<p class="purchase-warning" role="alert">Os documentos da mesma encomenda têm datas ou valores diferentes. Confere as fontes e escolhe os dados corretos antes de associar ou aprovar.</p>}
+        <details open="@(e.HasSourceConflict||EvidenceRequested is not null)"><summary>@documents.Count fonte(s) · Artigos e origem da informação</summary>
+        @foreach(var document in documents){var data=JsonSerializer.Deserialize<PurchaseEvidence>(document.PayloadJson)!;<div class="purchase-source" id="@($"fonte-{document.Id}")">@if(data.Email is {} email){<EmailSourceSummary Email="email"/>}else{<strong>@document.Source</strong>}<p>@(data.Date?.ToString("dd/MM/yyyy")??"Data por confirmar") · @(data.Units is {} sourceAmount?Format.Money(sourceAmount):"Valor por confirmar") · @data.Description</p><p class="purchase-details">@data.Details</p>@if(e.HasSourceConflict&&e.TransactionId is null&&data.Date is not null&&data.Units is >0){<button type="button" class="button small" disabled="@busy" @onclick="()=>Resolve(row,document.Id)">Usar data e total deste documento</button>}</div>}
+        </details>
+        @foreach(var original in documents.Where(d=>d.DocumentSha256.Length>0)){<a class="text-link" href="@($"/api/v1/purchases/sources/{original.Id}/original")" download>↓ Fatura PDF original</a>}
+        @if(e.CategoryAllocationsJson!="[]"&&e.PaymentMethod!="Split"){<PurchaseAllocationPanel Evidence="e" Categories="categories" OnSaved="Reload"/>}
+        @if(e.PaymentMethod=="Cancelled" && e.TransactionId is {} cancelled){<p class="hint">Movimento #@cancelled anulado.</p>} else if(e.TransactionId is {} linked){<p class="hint"><strong>@(candidates.Any(c=>c.TransactionId==linked)?$"Associada ao movimento #{linked}":$"Ligação ao movimento #{linked} a rever — dados alterados, anulados ou em conflito")</strong> · As fontes documentam a mesma compra.</p><button type="button" class="button small" disabled="@busy" @onclick="()=>Unlink(row)">Remover associação</button>}
+        else if(e.Date is null||e.Units is null){<p class="hint">Documento guardado como origem. Sem data e valor confirmados, não é possível criar um movimento.</p>}
+        else if(e.PaymentMethod!="TopUp"&&!e.HasSourceConflict&&(e.FinancialUnits??e.Units)!=0){<p class="hint">@(candidates.Count==0?"Sem correspondência nos movimentos disponíveis. Podes criar já o movimento com os dados desta compra.":$"{candidates.Count} possível(is) correspondência(s) por entidade, valor e data próxima. Confere antes de associar.")</p>}
+        @if(pendingIds.Contains(e.Id)&&similar.Count>0){<p class="purchase-warning">Há outras compras com o mesmo valor e data. Estes dados, por si só, não permitem concluir que é a mesma compra.</p>}
+        @if(candidates.Count>0&&e.TransactionId is null){<details open><summary>Ver possíveis correspondências</summary>@foreach(var match in candidates){<p>@match.Date.ToString("dd/MM/yyyy") · @match.Description · @(match.TransactionId is {} id?$"Movimento existente #{id}":$"Extrato #{match.ImportId}, linha {match.Ordinal}")</p>@if(match.TransactionId is {} transactionId){<button type="button" class="button small" disabled="@busy" @onclick="()=>Link(row,transactionId)">É esta compra — associar ao movimento</button>}else{<a href="@($"/extratos?rever={match.ImportId}&linha={match.Ordinal}")">Rever este movimento no extrato →</a>}}</details>}
+        @if(e.PaymentMethod!="TopUp" && e.TransactionId is null && e.Date is not null && (e.FinancialUnits??e.Units) is >0)
+        {
+            <div class="purchase-fields"><label>Conta do pagamento<select @bind="row.AccountId" disabled="@busy"><option value="">Por associar — confirmar depois</option>@foreach(var a in accounts.Where(a=>a.Account.Active&&a.Account.Currency=="EUR")){<option value="@a.Account.Id">@a.Account.Name</option>}</select></label><CategoryPicker Categories="categories" Kind="MovementKind.Expense" @bind-Value="row.CategoryId" Disabled="busy" Context="@($"da compra {e.Id}")"/></div>
+            <details><summary>Se existir um possível duplicado</summary><label class="checkbox-label"><input type="checkbox" @bind="row.Distinct" disabled="@busy"/> Conferi os movimentos existentes e esta é uma compra distinta.</label></details><div class="purchase-actions"><label class="checkbox-label"><input type="checkbox" @bind="row.Checked" disabled="@busy"/> Conferi os dados e os avisos</label><button type="button" class="button small" disabled="@(busy||e.HasSourceConflict||!row.Checked||row.CategoryId is null)" @onclick="()=>Approve(row)">Aprovar e criar movimento</button></div>
+        }
+    </article>
+}
+@if(rows.Count==0){<p class="empty-small">Não há compras ou documentos que correspondam a estes filtros.</p>}
+@if(Pages>1){<div class="form-footer"><button type="button" class="button small" disabled="@(busy||page<=1)" @onclick="()=>ShowPage(page-1)">← Anteriores</button><span>Página @(page) de @Pages</span><button type="button" class="button small" disabled="@(busy||page>=Pages)" @onclick="()=>ShowPage(page+1)">Seguintes →</button></div>}
+</section>
+<BusyIndicator Active="busy" />
+@code {
+    List<ReviewRow> rows=[];
+    List<PurchaseEvidence> allEvidence=[];
+    InvoiceCoverage? coverage;
+    [SupplyParameterFromQuery(Name="canal")] public string? Channel{get;set;}
+    [SupplyParameterFromQuery(Name="compra")] public long? EvidenceRequested{get;set;}
+    [SupplyParameterFromQuery(Name="ano")] public int? YearRequested{get;set;}
+    [SupplyParameterFromQuery(Name="pendentes")] public bool ReviewOnly{get;set;}
+    HashSet<long> pendingIds=[];
+    int page=1;const int PageSize=20;
+    IEnumerable<PurchaseEvidence> ScopedEvidence=>allEvidence.Where(e=>(EvidenceRequested is null||e.Id==EvidenceRequested)&&(string.IsNullOrEmpty(Channel)||string.Equals(e.Channel,Channel,StringComparison.OrdinalIgnoreCase))&&(!ReviewOnly||pendingIds.Contains(e.Id)));
+    int UndatedCount=>ScopedEvidence.Count(e=>e.Date is null);
+    List<PurchaseEvidence> FilteredEvidence=>ScopedEvidence.Where(e=>YearRequested is null||(YearRequested==0?e.Date is null:e.Date?.Year==YearRequested)).ToList();
+    int Pages=>Math.Max(1,(FilteredEvidence.Count+PageSize-1)/PageSize);
+    List<Category> categories=[];
+    List<AccountSummary> accounts=[];
+    Dictionary<long,List<EvidenceMatch>> matches=[];
+    List<PurchaseEvidenceSource> sources=[];
+    bool busy,error; string? message;
+    protected override async Task OnParametersSetAsync(){page=1;await Reload();}
+    async Task Reload()
+    {
+        categories=await Finance.CategoriesAsync(); accounts=await Finance.AccountsAsync();
+        allEvidence=await Imports.EvidenceAsync();pendingIds=await Finance.PendingPurchaseIdsAsync();page=Math.Min(page,Pages);await ReloadRows();
+    }
+    async Task ReloadRows(){rows=FilteredEvidence.Skip((page-1)*PageSize).Take(PageSize).Select(e=>new ReviewRow{Evidence=e,AccountId=e.AccountId,CategoryId=e.CategoryId}).ToList();var ids=rows.Select(r=>r.Evidence.Id).ToArray();matches=await Imports.EvidenceMatchesAsync(ids);sources=await Imports.EvidenceSourcesAsync(ids);coverage=string.Equals(Channel,"Continente",StringComparison.OrdinalIgnoreCase)?await Imports.InvoiceCoverageAsync(Channel!):null;}
+    async Task FilterChanged(){page=1;await ReloadRows();}
+    async Task ShowUndated(){YearRequested=0;await FilterChanged();}
+    async Task ShowPage(int next){if(busy)return;page=Math.Clamp(next,1,Pages);await ReloadRows();}
+    Task Link(ReviewRow row,long transactionId)=>Change(()=>Imports.LinkEvidenceAsync(row.Evidence.Id,row.Evidence.Version,transactionId),"Fontes associadas ao movimento existente. Nenhuma despesa adicional foi criada.");
+    Task Unlink(ReviewRow row)=>Change(()=>Imports.UnlinkEvidenceAsync(row.Evidence.Id,row.Evidence.Version),"Associação removida. O movimento financeiro foi preservado.");
+    Task Resolve(ReviewRow row,long sourceId)=>Change(()=>Imports.ResolveEvidenceSourceAsync(row.Evidence.Id,row.Evidence.Version,sourceId),"Data e montante escolhidos. Todas as fontes foram preservadas; confere e aprova o movimento.");
+    async Task Change(Func<Task> action,string success)
+    {
+        if(busy)return;busy=true;StateHasChanged();await Task.Delay(1);error=false;
+        try{await action();await Reload();message=success;}
+        catch(FinanceRuleException ex){message=ex.Message;error=true;}
+        finally{busy=false;}
+    }
+    async Task Approve(ReviewRow row)
+    {
+        if(busy)return; busy=true;StateHasChanged();await Task.Delay(1); error=false;
+        try{var id=await Imports.ConfirmEvidenceMovementAsync(row.Evidence.Id,row.Evidence.Version,row.AccountId,row.CategoryId??0,row.Checked,row.Distinct);await Reload();message=$"Movimento #{id} registado. Os próximos documentos desta compra serão cruzados com este movimento.";}
+        catch(FinanceRuleException ex){message=ex.Message;error=true;}
+        finally{busy=false;}
+    }
+    sealed class ReviewRow{public PurchaseEvidence Evidence {get;set;}=new();public long? AccountId {get;set;}public long? CategoryId {get;set;}public bool Checked {get;set;}public bool Distinct {get;set;}}
+}

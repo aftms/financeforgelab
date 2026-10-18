@@ -1,0 +1,12 @@
+@if (Active)
+{
+    <div class="operation-busy" aria-busy="true">
+        <div class="operation-busy-status" role="status" aria-live="polite" aria-atomic="true">
+            <span class="operation-spinner" aria-hidden="true"></span>
+            <span><strong>A processar…</strong><small>Aguarda um momento.</small></span>
+        </div>
+    </div>
+}
+@code {
+    [Parameter] public bool Active { get; set; }
+}

@@ -1,0 +1,22 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+<section class="panel editor-panel @Class" tabindex="-1" aria-label="@Label" @ref="panel">@ChildContent</section>
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string Label { get; set; } = "Formulário de edição";
+    [Parameter] public string? FocusTargetId { get; set; }
+    ElementReference panel;
+    IJSObjectReference? module;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        module = await JS.InvokeAsync<IJSObjectReference>("import", "./editor.js?v=2");
+        await module.InvokeVoidAsync("showEditor", panel, FocusTargetId);
+    }
+    public async ValueTask DisposeAsync()
+    {
+        if (module is null) return;
+        try { await module.DisposeAsync(); } catch (JSDisconnectedException) { }
+    }
+}

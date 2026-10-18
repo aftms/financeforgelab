@@ -1,0 +1,32 @@
+@page "/pendencias"
+@inject FinanceService Service
+<PageTitle>Pendências · FinanceForgeLab</PageTitle>
+<div class="page-heading">
+    <div><span class="eyebrow">REVISÃO DOS DADOS</span><h1>Pendências</h1><p>O que falta conferir, classificar ou associar.</p></div>
+    <div class="heading-actions"><label for="pending-year">Ano<select id="pending-year" value="@summary?.Year" @onchange="ChangeYear" disabled="@busy">@if(summary is not null){foreach(var year in summary.Years){<option value="@year">@year</option>}}</select></label><a class="button primary" href="/assistente">Abrir Assistente</a></div>
+</div>
+@if(summary is null){<p class="loading" role="status">A consultar pendências…</p>}
+else{
+    @if(!summary.HasReviewPending){<p class="notice success" role="status">Sem pendências de revisão identificadas em @summary.Year.</p>}
+    <div class="pending-grid" aria-busy="@busy">
+        <section class="panel pending-card"><h2>Extratos por tratar</h2><strong class="pending-count">@summary.PendingBankRows.ToString("N0")</strong><p>Linhas por classificar, aprovar ou associar a movimentos existentes.</p>
+            @if(summary.PendingBankRows>0){<a class="button" href="@($"/extratos?ano={summary.Year}#extratos-carregados")">Rever extratos →</a>}else{<span class="pending-clear">Sem linhas pendentes</span>}
+        </section>
+        <section class="panel pending-card"><h2>Compras e documentos</h2><strong class="pending-count">@summary.PendingPurchases.ToString("N0")</strong><p>Compras por conferir e cruzar com despesas já registadas.</p>
+            @if(summary.PendingPurchases>0){<a class="button" href="@($"/compras?ano={summary.Year}&pendentes=true")">Rever compras e documentos →</a>}else{<span class="pending-clear">Sem compras pendentes neste ano</span>}
+        </section>
+        <section class="panel pending-card"><h2>Contas por associar</h2><strong class="pending-count">@summary.UnassignedExpenses.ToString("N0")</strong><p>Despesas já registadas cuja conta de pagamento falta confirmar.</p>
+            @if(summary.UnassignedExpenses>0){<a class="button" href="@($"/movimentos?ano={summary.Year}&tipo=Expense&porAssociar=true")">Identificar contas →</a>}else{<span class="pending-clear">Sem despesas com conta por associar</span>}
+        </section>
+    </div>
+    @if(summary.UndatedPurchases>0){<section class="panel pending-undated"><div><h2>Documentos sem data confirmada</h2><p>@summary.UndatedPurchases documentos por conferir, sem associação a um ano.</p></div><a class="button" href="/compras?ano=0&pendentes=true">Rever documentos sem data →</a></section>}
+    <p class="hint">A mesma operação pode aparecer em mais de um grupo.@if(summary.BankThrough is {} through){<span> Último extrato com movimentos de @summary.Year: @through.ToString("dd/MM/yyyy").</span>}</p>
+}
+<BusyIndicator Active="busy" />
+@code{
+    [SupplyParameterFromQuery(Name="ano")] public int? YearRequested{get;set;}
+    DashboardSummary? summary;bool busy;
+    protected override async Task OnParametersSetAsync()=>await Load(YearRequested is >=1 and <=9999?YearRequested:null);
+    async Task Load(int? year){busy=true;try{summary=await Service.DashboardAsync(year);}finally{busy=false;}}
+    async Task ChangeYear(ChangeEventArgs e){if(!busy&&int.TryParse(e.Value?.ToString(),out var year)&&year is >=1 and <=9999)await Load(year);}
+}

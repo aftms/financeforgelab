@@ -1,0 +1,30 @@
+@inject IServiceProvider Services
+<span class="email-source-summary">
+    <span>Email · @(string.IsNullOrWhiteSpace(Email.Sender)?"Remetente não disponível":Email.Sender)</span>
+    <strong>@(string.IsNullOrWhiteSpace(Email.Subject)?"Assunto não disponível":Email.Subject)</strong>
+    <small>@DateLabel · @Email.Account@if(!string.IsNullOrWhiteSpace(Email.Folder)){<text> / @Email.Folder</text>}</small>
+    <span class="email-source-actions">
+        @if(Email.SafeWebLink is {} link){<a href="@link" target="_blank" rel="noopener noreferrer">Abrir email ↗</a>}
+        @if(!string.IsNullOrWhiteSpace(Email.Subject)){<button type="button" class="button small" disabled="@copying" @onclick="CopySubject">@(copying?"A copiar…":copied?"Assunto copiado ✓":"Copiar assunto para pesquisar")</button>}
+    </span>
+    @if(copied){<small role="status">Cola na pesquisa do @Email.Account; confirma o remetente e a data acima.</small>}
+    @if(copyFailed){<label>Seleciona e copia o assunto: <input readonly value="@Email.Subject" aria-label="Assunto do email para pesquisar" /></label>}
+</span>
+@code {
+    [Parameter,EditorRequired] public EmailSourceReference Email { get; set; } = default!;
+    string DateLabel=>Email.ReceivedAt is {} date?TimeZoneInfo.ConvertTime(date,TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon")).ToString("dd/MM/yyyy HH:mm")+" (Lisboa)":"Data não disponível";
+    bool copying,copied,copyFailed;
+    protected override void OnParametersSet(){copied=false;copyFailed=false;}
+    async Task CopySubject()
+    {
+        copying=true;copied=false;copyFailed=false;
+        try{
+            var js=Services.GetRequiredService<IJSRuntime>();
+            await using var module=await js.InvokeAsync<IJSObjectReference>("import","./email-source.js");
+            await module.InvokeVoidAsync("copyText",Email.Subject);copied=true;
+        }
+        catch(JSException){copyFailed=true;}
+        catch(InvalidOperationException){copyFailed=true;}
+        finally{copying=false;}
+    }
+}

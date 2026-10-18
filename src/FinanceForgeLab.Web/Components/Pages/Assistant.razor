@@ -1,0 +1,98 @@
+@page "/assistente"
+@page "/assistente/{Id}"
+@implements IAsyncDisposable
+@using System.Text.Json
+@using Microsoft.EntityFrameworkCore
+@using FinanceForgeLab.Web.Services
+@inject AssistantService Service
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject IConfiguration Configuration
+<PageTitle>Assistente · FinanceForgeLab</PageTitle>
+<div class="page-heading"><div><span class="eyebrow">DOCUMENTOS E PEDIDOS</span><h1>Assistente</h1><p>Envia faturas, imagens, extratos ou texto. Acompanha o tratamento e responde aqui às dúvidas.</p></div>@if(Id is not null){<a class="button" href="/assistente">+ Novo pedido</a>}</div>
+@if(error is not null){<div class="notice error" role="alert">@error</div>}
+@if(!Configuration.GetValue<bool>("Finance:AssistantEnabled")){<div class="notice" role="status">Podes guardar pedidos e anexos. O processamento por IA aguarda a ativação da ligação ao Gateway; os pedidos ficam em fila.</div>}
+<section class="assistant-sync" aria-label="Atualizações das fontes">
+@foreach(var sync in syncs)
+{
+    <div class="panel assistant-sync-card"><button type="button" class="button" disabled="@busy" @onclick="()=>StartScan(sync.Kind)">@AssistantService.ScanTitle(sync.Kind)</button>
+    <p>@(sync.Kind switch {"files"=>"Extratos, faturas e outros documentos nas pastas autorizadas.","review"=>"Todos os períodos e contas: cruza fontes, tenta resolver pendências e deteta incoerências. No fim, mostra as alterações guardadas e o que falta esclarecer.",_=>"Compras e pagamentos no Hotmail; Gmail apenas na INBOX."})</p>
+    <small>@if(sync.Kind!="review"){@sync.Processed<text> fontes verificadas · </text>@sync.Pending<text> pendentes</text><br/>}@(sync.LastCompleted is {} last?$"Última execução concluída: {last.ToLocalTime():dd/MM/yyyy HH:mm}":sync.Kind=="review"?"A revisão não apaga nem funde possíveis duplicados automaticamente.":"Usa também o histórico de documentos já importados.")</small>
+    @if(sync.OpenRequest is not null){<a href="@($"/assistente/{sync.OpenRequest}")">Acompanhar ou retomar atualização →</a>}
+    </div>
+}
+</section>
+<p class="hint">O progresso fica guardado. Os documentos alterados e as pendências são revistos; uma nova tentativa não volta a criar as mesmas despesas.</p>
+<div class="assistant-layout">
+<section class="panel assistant-main">
+@if(detail is not null)
+{
+    <div class="assistant-heading"><h2>@detail.Request.Title</h2><strong class="badge">@AssistantService.Label(detail.Request.Status)</strong></div>
+    <p class="hint" role="status">@detail.Request.Notice</p>
+    @if(detail.Request.Workflow=="review"){<AssistantReviewReport Detail="detail" />}
+    @if(detail.Request.Workflow=="review"&&detail.Request.Status is "Partial" or "Blocked"&&!detail.Request.Archived){<button type="button" class="button primary" disabled="@busy" @onclick="ContinueReview">Continuar revisão</button>}
+    @foreach(var turn in detail.Turns)
+    {
+        <article class="assistant-turn"><div class="assistant-user"><small>@turn.CreatedUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · Pedido / resposta</small><p>@turn.UserText</p></div>
+        @if(turn.Summary.Length>0){<div class="assistant-analysis"><strong>Análise</strong><p>@turn.Summary</p></div>}
+        @foreach(var operation in detail.Operations.Where(o=>o.Round==turn.Round&&o.Type is not ("review_snapshot" or "review_note")))
+        {
+            <div class="assistant-result"><strong>@(operation.Status=="Completed"?"✓ Resultado verificado":operation.Status=="Rejected"?"Por resolver":"A verificar")</strong><p>@operation.Message</p>
+            @if(operation.Status=="Completed"&&operation.ResultJson.Length>0){var receipt=JsonSerializer.Deserialize<AssistantActionReceipt>(operation.ResultJson,AssistantService.Json)!;<a href="@receipt.Url">Consultar registos →</a>@if(receipt.TransactionIds.Length>0){<small>Movimentos: @foreach(var transactionId in receipt.TransactionIds.Distinct()){<a href="@($"/movimentos?registo={transactionId}")">#@transactionId </a>}</small>}}
+            </div>
+        }
+        @if(turn.Round==detail.Request.Round&&turn.QuestionsJson!="[]")
+        {
+            @foreach(var question in JsonSerializer.Deserialize<List<AssistantQuestion>>(turn.QuestionsJson,AssistantService.Json)??[])
+            {<div class="assistant-question"><strong>@question.Text</strong>@if(question.Options?.Count>0){<div class="assistant-options">@foreach(var option in question.Options){<button class="button small secondary" disabled="@busy" @onclick="()=>AddAnswer(question.Text,option)">@option</button>}</div>}</div>}
+        }
+        </article>
+    }
+    @if(detail.Attachments.Count>0){<details><summary>@detail.Attachments.Count anexo(s) original(is)</summary><ul>@foreach(var file in detail.Attachments){<li><a href="@($"/api/v1/assistant/{Id}/attachments/{file.Id}")" download>@file.Name</a> · @(file.Size/1024) KB</li>}</ul></details>}
+    @if(detail.Request.Status=="Blocked"){<button class="button small secondary" disabled="@busy" @onclick="Retry">Verificar novamente o mesmo pedido</button>}
+    @if(!AssistantService.Active(detail.Request.Status)){<button class="text-link" disabled="@busy" @onclick="Archive">@(detail.Request.Archived?"Retirar do arquivo":"Arquivar pedido")</button>}
+}
+@if(detail is null||(!AssistantService.Active(detail.Request.Status)&&!detail.Request.Archived))
+{
+    <div id="assistant-compose" class="assistant-compose">
+    <label for="assistant-text">@(Id is null?"O que queres tratar?":"Responder ou continuar este pedido")</label>
+    <textarea id="assistant-text" rows="4" maxlength="20000" @bind="text" placeholder="Ex.: Confere estas faturas, classifica os artigos e regista o que ainda faltar."></textarea>
+    <div class="assistant-upload"><label for="assistant-files">Anexar ou arrastar ficheiros · também podes colar uma imagem</label><InputFile id="assistant-files" OnChange="FilesChanged" multiple accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.tsv" disabled="@busy"/><small>Até 10 ficheiros · 20 MB por ficheiro · 50 MB por envio</small></div>
+    @if(files.Count>0){<ul class="assistant-files">@foreach(var file in files){<li>@file.Name <button type="button" class="text-link" disabled="@busy" @onclick="()=>files.Remove(file)">Remover</button></li>}</ul>}
+    <div class="assistant-send"><span class="hint">As fontes são cruzadas com os registos existentes. As dúvidas ficam neste pedido.</span><button class="button primary" disabled="@(busy||(string.IsNullOrWhiteSpace(text)&&files.Count==0))" @onclick="Send">@(busy?"A guardar…":Id is null?"Enviar para tratar":"Enviar resposta")</button></div>
+    </div>
+}
+else if(detail is not null&&AssistantService.Active(detail.Request.Status)){<p class="notice">Podes sair desta página. O tratamento continua enquanto a aplicação estiver em funcionamento.</p>}
+</section>
+<aside class="panel assistant-list"><div class="assistant-heading"><h2>Pedidos</h2><label class="checkbox-label"><input type="checkbox" @bind="archived" @bind:after="Reload"/> Arquivados</label></div>
+@foreach(var request in requests){<a class="assistant-item @(request.Id==Id?"selected":"")" href="@($"/assistente/{request.Id}")"><strong>@request.Title</strong><span>@AssistantService.Label(request.Status)</span><small>@request.UpdatedUtc.ToLocalTime().ToString("dd/MM HH:mm")</small></a>}
+@if(requests.Count==0){<p class="hint">Ainda não há pedidos nesta lista.</p>}
+</aside></div>
+<BusyIndicator Active="busy" />
+@code {
+    [Parameter] public string? Id{get;set;}
+    AssistantDetail? detail;List<FinanceForgeLab.Core.AssistantRequest> requests=[];List<AssistantFile> files=[];
+    List<AssistantSyncSummary> syncs=[];
+    string text="";string? error,lastId;bool busy,archived;Guid clientId=Guid.NewGuid();
+    readonly CancellationTokenSource stop=new();Task? refresh;IJSObjectReference? module;
+    protected override async Task OnParametersSetAsync(){if(lastId!=Id){text="";files.Clear();clientId=Guid.NewGuid();lastId=Id;}await Reload();}
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {refresh??=RefreshLoop();try{module??=await JS.InvokeAsync<IJSObjectReference>("import","/assistant.js");await module.InvokeVoidAsync("attach");}catch(JSDisconnectedException){} }
+    async Task Reload(){try{requests=await Service.ListAsync(archived);detail=Id is null?null:await Service.DetailAsync(Id);syncs=await Service.SyncSummaryAsync();}catch(FinanceRuleException ex){error=ex.Message;}}
+    async Task StartScan(string kind)=>await Change(async()=>{var id=await Service.StartScanAsync(kind);Navigation.NavigateTo($"/assistente/{id}");});
+    async Task RefreshLoop(){try{using var timer=new PeriodicTimer(TimeSpan.FromSeconds(5));while(await timer.WaitForNextTickAsync(stop.Token))await InvokeAsync(async()=>{if(!busy){await Reload();StateHasChanged();}});}catch(OperationCanceledException){}}
+    async Task FilesChanged(InputFileChangeEventArgs args)
+    {
+        if(busy)return;error=null;busy=true;StateHasChanged();await Task.Delay(1);
+        try{foreach(var file in args.GetMultipleFiles(AssistantService.MaxFiles)){if(files.Count>=AssistantService.MaxFiles)throw new FinanceRuleException("Até 10 ficheiros por envio.");using var stream=new MemoryStream();await file.OpenReadStream(AssistantService.MaxFileBytes).CopyToAsync(stream);if(files.Sum(x=>(long)x.Content.Length)+stream.Length>AssistantService.MaxTotalBytes)throw new FinanceRuleException("Até 50 MB por envio.");files.Add(new(file.Name,stream.ToArray()));}}
+        catch(Exception ex) when(ex is IOException or InvalidOperationException or FinanceRuleException){error=ex is FinanceRuleException?ex.Message:"Não foi possível carregar os ficheiros. Verifica o limite de 10 ficheiros e 20 MB por ficheiro.";}
+        finally{busy=false;}
+    }
+    async Task Send()=>await Change(async()=>{if(Id is null){var id=await Service.CreateAsync(clientId,text,files);text="";files.Clear();Navigation.NavigateTo($"/assistente/{id}");}else{await Service.ReplyAsync(Id,detail!.Request.Version,clientId,text,files);text="";files.Clear();clientId=Guid.NewGuid();}});
+    async Task Retry()=>await Change(()=>Service.RetryAsync(Id!,detail!.Request.Version));
+    async Task ContinueReview()=>await Change(async()=>{await Service.ReplyAsync(Id!,detail!.Request.Version,clientId,"Continua a revisão a partir do inventário e dos resultados guardados. Trata os itens ainda sem análise; não repitas operações concluídas. Se depender de informação minha, faz uma pergunta concreta.",[]);clientId=Guid.NewGuid();});
+    async Task Archive()=>await Change(()=>Service.ArchiveAsync(Id!,detail!.Request.Version,!detail.Request.Archived));
+    async Task Change(Func<Task> action){if(busy)return;busy=true;StateHasChanged();await Task.Delay(1);error=null;try{await action();await Reload();}catch(FinanceRuleException ex){error=ex.Message;}catch(DbUpdateConcurrencyException){error="O pedido foi atualizado. Volta a abri-lo.";}finally{busy=false;}}
+    void AddAnswer(string question,string option){text+=(text.Length>0?"\n":"")+question+"\n"+option;}
+    public async ValueTask DisposeAsync(){stop.Cancel();if(refresh is not null)await refresh;stop.Dispose();if(module is not null){try{await module.DisposeAsync();}catch(JSDisconnectedException){}}}
+}

@@ -11,8 +11,10 @@ public sealed class FinanceDb(DbContextOptions<FinanceDb> options) : DbContext(o
     public DbSet<Person> People => Set<Person>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Account> Accounts => Set<Account>();
+    public DbSet<RecurringExpense> RecurringExpenses => Set<RecurringExpense>();
     public DbSet<FinancialTransaction> Transactions => Set<FinancialTransaction>();
     public DbSet<Posting> Postings => Set<Posting>();
+    public DbSet<IndividualMovement> IndividualMovements => Set<IndividualMovement>();
     public DbSet<SourceDataset> SourceDatasets => Set<SourceDataset>();
     public DbSet<SourceSnapshot> SourceSnapshots => Set<SourceSnapshot>();
     public DbSet<SourceRecord> SourceRecords => Set<SourceRecord>();
@@ -25,11 +27,22 @@ public sealed class FinanceDb(DbContextOptions<FinanceDb> options) : DbContext(o
     public DbSet<BankDocument> BankDocuments => Set<BankDocument>();
     public DbSet<BankImport> BankImports => Set<BankImport>();
     public DbSet<BankImportEntry> BankImportEntries => Set<BankImportEntry>();
+    public DbSet<BankReference> BankReferences => Set<BankReference>();
+    public DbSet<PurchaseEvidence> PurchaseEvidence => Set<PurchaseEvidence>();
+    public DbSet<PurchaseEvidenceSource> PurchaseEvidenceSources => Set<PurchaseEvidenceSource>();
+    public DbSet<ReimbursementClaim> ReimbursementClaims => Set<ReimbursementClaim>();
+    public DbSet<ReimbursementAllocation> ReimbursementAllocations => Set<ReimbursementAllocation>();
+    public DbSet<AssistantRequest> AssistantRequests => Set<AssistantRequest>();
+    public DbSet<AssistantTurn> AssistantTurns => Set<AssistantTurn>();
+    public DbSet<AssistantAttachment> AssistantAttachments => Set<AssistantAttachment>();
+    public DbSet<AssistantOperation> AssistantOperations => Set<AssistantOperation>();
+    public DbSet<AssistantSourceCache> AssistantSources => Set<AssistantSourceCache>();
 
     public static FinanceDb Open(string path)
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.GetFullPath(path), ForeignKeys = true, Pooling = false }.ToString());
         connection.CreateFunction<string?, string, bool>("ffl_contains", (text, term) => Fold(text).Contains(Fold(term), StringComparison.Ordinal), isDeterministic: true);
+        connection.CreateFunction<string?,long,long,long,bool>("ffl_purchase_category",PurchaseAllocationMath.ContainsCategory,isDeterministic:true);
         return new(new DbContextOptionsBuilder<FinanceDb>().UseSqlite(connection, contextOwnsConnection: true).Options);
     }
     private static string Fold(string? text) => new string((text ?? "").Normalize(System.Text.NormalizationForm.FormD)
@@ -37,6 +50,58 @@ public sealed class FinanceDb(DbContextOptions<FinanceDb> options) : DbContext(o
 
     protected override void OnModelCreating(ModelBuilder m)
     {
+        m.Entity<RecurringExpense>().HasOne<Household>().WithMany().HasForeignKey(x=>x.HouseholdId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<RecurringExpense>().HasOne<Category>().WithMany().HasForeignKey(x=>x.CategoryId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<RecurringExpense>().HasOne<Account>().WithMany().HasForeignKey(x=>x.AccountId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<RecurringExpense>().HasIndex(x=>new{x.HouseholdId,x.MatchKey}).IsUnique();
+        m.Entity<RecurringExpense>().Property(x=>x.Version).IsConcurrencyToken();
+        m.Entity<IndividualMovement>().HasOne<FinancialTransaction>().WithMany().HasForeignKey(x=>x.PaymentTransactionId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<IndividualMovement>().HasOne<Category>().WithMany().HasForeignKey(x=>x.CategoryId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<IndividualMovement>().HasOne<Account>().WithMany().HasForeignKey(x=>x.AccountId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<IndividualMovement>().HasOne<Account>().WithMany().HasForeignKey(x=>x.DestinationAccountId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<IndividualMovement>().HasOne<Person>().WithMany().HasForeignKey(x=>x.PersonId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<IndividualMovement>().HasIndex(x=>new{x.PaymentTransactionId,x.SourceCategoryId}).IsUnique();
+        m.Entity<IndividualMovement>().Property(x=>x.Version).IsConcurrencyToken();
+        m.Entity<AssistantRequest>().HasIndex(x=>x.ClientId).IsUnique();
+        m.Entity<AssistantRequest>().HasIndex(x=>x.Workflow);
+        m.Entity<AssistantSourceCache>().HasIndex(x=>new{x.Kind,x.Scope,x.SourceId,x.Fingerprint}).IsUnique();
+        m.Entity<AssistantAttachment>().HasOne<AssistantSourceCache>().WithMany().HasForeignKey(x=>x.SourceCacheId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<AssistantRequest>().Property(x=>x.Version).IsConcurrencyToken();
+        m.Entity<AssistantTurn>().HasOne<AssistantRequest>().WithMany().HasForeignKey(x=>x.RequestId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<AssistantTurn>().HasIndex(x=>new{x.RequestId,x.Round}).IsUnique();
+        m.Entity<AssistantTurn>().HasIndex(x=>x.ClientId).IsUnique();
+        m.Entity<AssistantAttachment>().HasOne<AssistantRequest>().WithMany().HasForeignKey(x=>x.RequestId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<AssistantAttachment>().HasIndex(x=>new{x.RequestId,x.Sha256}).IsUnique();
+        m.Entity<AssistantOperation>().HasOne<AssistantRequest>().WithMany().HasForeignKey(x=>x.RequestId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<AssistantOperation>().HasIndex(x=>new{x.RequestId,x.Key}).IsUnique();
+        m.HasDbFunction(typeof(PurchaseAllocationMath).GetMethod(nameof(PurchaseAllocationMath.ContainsCategory))!).HasName("ffl_purchase_category");
+        m.Entity<ReimbursementClaim>().HasOne<Household>().WithMany().HasForeignKey(x => x.HouseholdId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<ReimbursementClaim>().HasOne<FinancialTransaction>().WithMany().HasForeignKey(x => x.ExpenseTransactionId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<ReimbursementClaim>().HasIndex(x => x.ExpenseTransactionId).IsUnique();
+        m.Entity<ReimbursementClaim>().Property(x => x.Version).IsConcurrencyToken();
+        m.Entity<ReimbursementClaim>().ToTable("ReimbursementClaims", t => t.HasCheckConstraint("CK_ReimbursementClaim_Amount", "AmountUnits > 0"));
+        m.Entity<ReimbursementAllocation>().HasOne<ReimbursementClaim>().WithMany().HasForeignKey(x => x.ClaimId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<ReimbursementAllocation>().HasOne<FinancialTransaction>().WithMany().HasForeignKey(x => x.ReceiptTransactionId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<ReimbursementAllocation>().HasIndex(x => new { x.ClaimId, x.ReceiptTransactionId }).IsUnique();
+        m.Entity<ReimbursementAllocation>().ToTable("ReimbursementAllocations", t => t.HasCheckConstraint("CK_ReimbursementAllocation_Amount", "AmountUnits > 0"));
+        m.Entity<PurchaseEvidence>().HasOne<Household>().WithMany().HasForeignKey(x => x.HouseholdId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<PurchaseEvidence>().HasOne<PurchaseEvidence>().WithMany().HasForeignKey(x => x.ParentEvidenceId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<PurchaseEvidence>().HasOne<Category>().WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<PurchaseEvidence>().HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<PurchaseEvidence>().HasOne<BankReference>().WithMany().HasForeignKey(x => x.BankReferenceId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<PurchaseEvidence>().HasIndex(x => new { x.HouseholdId, x.SourceKey }).IsUnique();
+        m.Entity<PurchaseEvidence>().Property(x => x.Version).IsConcurrencyToken();
+        m.Entity<PurchaseEvidence>().Property(x=>x.CategoryAllocationsJson).HasDefaultValue("[]");
+        m.Entity<PurchaseEvidence>().HasIndex(x => new { x.HouseholdId, x.OrderIdentity }).IsUnique();
+        m.Entity<PurchaseEvidence>().HasOne<FinancialTransaction>().WithMany().HasForeignKey(x => x.TransactionId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<PurchaseEvidence>().HasIndex(x => x.TransactionId).IsUnique();
+        m.Entity<PurchaseEvidenceSource>().HasOne<PurchaseEvidence>().WithMany().HasForeignKey(x => x.EvidenceId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<PurchaseEvidenceSource>().HasOne<Household>().WithMany().HasForeignKey(x => x.HouseholdId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<PurchaseEvidenceSource>().HasIndex(x => new { x.HouseholdId, x.SourceKey }).IsUnique();
+        m.Entity<BankReference>().HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<BankReference>().HasOne<Category>().WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
+        m.Entity<BankReference>().Property(x => x.Version).IsConcurrencyToken();
+        m.Entity<BankReference>().HasIndex(x => new { x.AccountId, x.Active });
         m.Entity<BankImport>().HasOne<BankDocument>().WithMany().HasForeignKey(x => x.DocumentId).OnDelete(DeleteBehavior.Restrict);
         m.Entity<BankImport>().HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
         m.Entity<BankImport>().HasOne<Person>().WithMany().HasForeignKey(x => x.PersonId).OnDelete(DeleteBehavior.Restrict);

@@ -1,0 +1,46 @@
+@using System.Text.Json
+@if(snapshot is not null)
+{
+    <section class="review-report" aria-labelledby="review-report-title">
+        <h2 id="review-report-title">@(AssistantService.Active(Detail.Request.Status)?"Progresso da revisão":"Resultado da revisão")</h2>
+        <p class="hint">Conferência de @snapshot.CheckedUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · todos os períodos e contas<br/>@snapshot.Transactions movimentos · @snapshot.Purchases compras/documentos · @snapshot.Statements secções de extratos</p>
+        <div class="review-totals">
+            <div><strong>@changes.Count</strong><span>operações financeiras/documentais guardadas</span></div>
+            <div><strong>@resolved</strong><span>pendências iniciais já não detetadas</span></div>
+            <div><strong>@snapshot.Issues.Count</strong><span>pendências e avisos ainda presentes</span></div>
+        </div>
+        <p class="hint">Uma operação pode alterar vários registos. Uma despesa pode ter vários avisos. A comparação inclui alterações feitas entretanto na aplicação.</p>
+        @if(changes.Count>0)
+        {
+            <details><summary>Alterações guardadas (@changes.Count)</summary><ul>@foreach(var op in changes){var receipt=JsonSerializer.Deserialize<AssistantActionReceipt>(op.ResultJson,AssistantService.Json)!;<li>@op.Message <a href="@receipt.Url">Consultar →</a></li>}</ul></details>
+        }
+        @if(snapshot.Issues.Count>0)
+        {
+            <p><strong>@snapshot.Issues.Count(i=>!notes.ContainsKey(i.Key)) por analisar</strong> · @snapshot.Issues.Count(i=>notes.ContainsKey(i.Key)) com motivo registado</p>
+            <label>Filtrar pendências e problemas<input type="search" placeholder="Categoria do aviso, movimento, entidade…" @bind="query" @bind:event="oninput" @bind:after="ResetPage" /></label>
+            <details><summary>Resumo por tipo</summary><ul>@foreach(var group in snapshot.Issues.GroupBy(i=>i.Kind).OrderBy(g=>g.Key)){<li>@group.Key: @group.Count()</li>}</ul></details>
+            <ul class="review-issues">@foreach(var issue in Filtered.Skip((page-1)*PageSize).Take(PageSize))
+            {<li><strong>@issue.Kind</strong><span>@issue.Description</span>@if(notes.TryGetValue(issue.Key,out var reason)){<p>@reason</p>}else{<small>Ainda sem análise documentada.</small>}<a href="@issue.Url">Consultar →</a></li>}</ul>
+            <div class="review-pages"><button type="button" class="button small secondary" disabled="@(page<=1)" @onclick="()=>page--">Anterior</button><span>@Filtered.Count resultado(s) · página @(page) de @Pages</span><button type="button" class="button small secondary" disabled="@(page>=Pages)" @onclick="()=>page++">Seguinte</button></div>
+        }
+        else {<p class="notice success">A conferência automática não detetou pendências. Consulta também a análise e os resultados das operações abaixo.</p>}
+    </section>
+}
+@code {
+    [Parameter,EditorRequired] public AssistantDetail Detail{get;set;}=default!;
+    ReviewSnapshot? snapshot;Dictionary<string,string> notes=[];List<AssistantOperation> changes=[];int resolved,page=1;string query="",lastId="";
+    const int PageSize=30;
+    List<ReviewIssue> Filtered=>snapshot?.Issues.Where(i=>string.IsNullOrWhiteSpace(query)||(i.Kind+" "+i.Description+" "+notes.GetValueOrDefault(i.Key)).Contains(query,StringComparison.CurrentCultureIgnoreCase)).ToList()??[];
+    int Pages=>Math.Max(1,(Filtered.Count+PageSize-1)/PageSize);
+    void ResetPage()=>page=1;
+    protected override void OnParametersSet()
+    {
+        if(lastId!=Detail.Request.Id){lastId=Detail.Request.Id;page=1;query="";}
+        snapshot=AssistantService.LatestReview(Detail.Operations);notes=AssistantService.ReviewNotes(Detail.Operations);
+        changes=Detail.Operations.Where(o=>o.Status=="Completed"&&o.Type is not ("review_snapshot" or "review_note" or "source_fetch" or "source_record" or "source_cursor")).ToList();
+        var baseline=Detail.Operations.FirstOrDefault(o=>o.Key=="system:review:baseline");
+        var initial=baseline is null?null:JsonSerializer.Deserialize<AssistantActionReceipt>(baseline.ResultJson,AssistantService.Json)?.Review;
+        var remaining=snapshot?.Issues.Select(i=>i.Key).ToHashSet()??[];resolved=initial?.Issues.Count(i=>!remaining.Contains(i.Key))??0;
+        page=Math.Min(page,Pages);
+    }
+}

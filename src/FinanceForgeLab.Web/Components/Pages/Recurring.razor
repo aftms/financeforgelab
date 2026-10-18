@@ -1,0 +1,59 @@
+@page "/recorrentes"
+@inject FinanceService Service
+<PageTitle>Despesas Recorrentes · FinanceForgeLab</PageTitle>
+<div class="page-heading"><div><span class="eyebrow">COMPROMISSOS AO LONGO DO ANO</span><h1>Despesas Recorrentes</h1><p>Mensalidades, anuidades e serviços regulares, mesmo quando o valor varia.</p></div><div class="heading-actions"><label>Ano<select @bind="year" @bind:after="Reload" disabled="@busy">@foreach(var y in years){<option value="@y">@y</option>}</select></label><button class="button primary" @onclick="New" disabled="@busy">+ Novo compromisso</button></div></div>
+@if(message!=null){<div class="notice @(error?"error":"success")" role="status">@message</div>}
+@if(editor is {} form){
+<section class="panel"><h2>@(form.Id==0?"Novo compromisso":"Editar compromisso")</h2><EditForm Model="form" OnValidSubmit="Save" FormName="recurring"><div class="form-grid">
+<label>Nome<InputText @bind-Value="form.Name" maxlength="120"/></label>
+<label>Categoria / subcategoria<InputSelect @bind-Value="form.CategoryId"><option value="">Todas — identificar pela descrição</option>@foreach(var c in categories.Where(c=>c.Kind==MovementKind.Expense&&(c.Active||c.Id==form.CategoryId))){<option value="@c.Id">@CategoryLabel(c)</option>}</InputSelect></label>
+<label>Descrição contém<InputText @bind-Value="form.ContainsText" maxlength="150" placeholder="Opcional: fornecedor, renda, subscrição…"/></label>
+<label>Conta<InputSelect @bind-Value="form.AccountId"><option value="">Todas as contas</option>@foreach(var a in accounts){<option value="@a.Account.Id">@a.Account.Name</option>}</InputSelect></label>
+<label>Periodicidade<InputSelect @bind-Value="form.Frequency">@foreach(var f in FinanceService.RecurringFrequencies){<option value="@f.Key">@f.Value</option>}</InputSelect></label>
+<label class="checkbox-label"><InputCheckbox @bind-Value="form.Included"/> Incluir nos totais de despesas fixas</label>
+</div><p class="hint">Associa despesas já registadas. A periodicidade descreve o compromisso; os valores aparecem no mês do movimento. Um movimento entra apenas uma vez, mesmo quando corresponde a mais de um compromisso.</p><div class="form-footer"><button type="button" class="button" @onclick="()=>editor=null" disabled="@busy">Cancelar</button><button class="button primary" type="submit" disabled="@busy">Guardar compromisso</button></div></EditForm></section>
+}
+@if(report is null){<p class="loading">A identificar as despesas recorrentes…</p>}
+else{
+<div class="stat-grid recurring-stats">
+<article class="stat-card"><div class="stat-label">Total registado · @year</div><strong>@Format.Money(report.TotalUnits)</strong><p>@report.Included.Count compromissos incluídos</p></article>
+<article class="stat-card"><div class="stat-label">Média dos meses com registos</div><strong>@(ObservedMonths==0?"—":Format.Money(report.TotalUnits/ObservedMonths))</strong><p>@ObservedMonths meses com movimentos</p></article>
+<article class="stat-card"><div class="stat-label">@(LastMonth==0?"Último mês com registos":$"Último mês com registos · {MonthName(LastMonth)}")</div><strong>@(LastMonth==0?"—":Format.Money(report.MonthUnits(LastMonth)))</strong><p>@LastChange</p></article>
+</div>
+<section class="panel"><div class="panel-heading"><div><h2>Evolução mensal</h2><p>Total dos compromissos incluídos · @year</p></div></div>
+<div class="recurring-chart" role="group" aria-label="Despesas fixas por mês. Seleciona uma barra para ver os movimentos.">
+@for(var m=1;m<=12;m++){var month=m;var units=report.MonthUnits(month);<div class="recurring-month"><span class="recurring-chart-value">@(report.MonthCount(month)==0?"—":Format.Money(units))</span><div class="recurring-bar-track">@if(report.MonthCount(month)>0){<button class="recurring-bar" style="height:@BarHeight(units)%" @onclick="()=>Show(null,month)" aria-label="@($"Ver movimentos de {MonthName(month)} de {year}: {Format.Money(units)}")" title="@($"{MonthName(month)}: {Format.Money(units)}")"></button>}</div><span>@Format.Month(month)</span></div>}
+</div><p class="hint">Pagamentos anuais contam no mês em que foram registados. Meses sem registos não confirmam ausência de despesas; os totais acompanham os dados disponíveis.</p></section>
+@if(detailsOpen){<section class="panel recurring-details"><div class="panel-heading"><div><h2>@DetailTitle</h2><p>@DetailRows.Count movimentos · @Format.Money(-DetailRows.Sum(r=>r.Units))</p></div><button class="button small" @onclick="()=>detailsOpen=false">Fechar</button></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Movimento</th><th>Categoria</th><th>Conta</th><th class="align-right">Valor</th></tr></thead><tbody>@foreach(var row in DetailRows.Take(detailLimit)){<tr><td>@row.Date.ToString("dd/MM/yyyy")</td><td><a href="@($"/movimentos?registo={row.Id}")">@row.DisplayDescription</a></td><td>@row.ParentCategory · @row.Category</td><td>@(row.Account??"Por associar")</td><td class="align-right">@Format.Money(-row.Units)</td></tr>}</tbody></table></div>@if(DetailRows.Count>detailLimit){<button class="button small" @onclick="()=>detailLimit+=50">Mostrar mais movimentos</button>}</section>}
+<section class="panel"><div class="panel-heading"><div><h2>Compromissos e valores por mês</h2><p>Seleciona um valor para consultar os movimentos.</p></div><button class="button small" @onclick="Identify" disabled="@busy">Identificar compromissos</button></div>
+<div class="recurring-filters"><label>Procurar compromisso<input @bind="search" @bind:event="oninput" placeholder="Nome ou categoria"/></label><label class="checkbox-label"><input type="checkbox" @bind="showExcluded"/> Mostrar retirados da análise</label></div>
+<div class="table-wrap recurring-table"><table><thead><tr><th>Compromisso</th><th>Periodicidade</th>@for(var m=1;m<=12;m++){<th class="align-right">@Format.Month(m)</th>}<th class="align-right">Total</th><th>Ações</th></tr></thead><tbody>
+@foreach(var line in VisibleLines){<tr class="@(line.Rule.Included?"":"recurring-excluded")"><td><button class="recurring-name" @onclick="()=>Show(line.Rule.Id,null)">@line.Rule.Name</button><small>@line.Category @(line.Rule.Included?"":"· Retirado dos totais")</small></td><td>@line.Frequency</td>@for(var m=1;m<=12;m++){var month=m;<td class="align-right">@if(line.MonthCount(month)>0){<button class="recurring-value" @onclick="()=>Show(line.Rule.Id,month)">@Format.Money(line.MonthUnits(month))</button>}else{<span class="muted">—</span>}</td>}<td class="align-right"><strong>@Format.Money(line.TotalUnits)</strong></td><td class="row-actions"><button @onclick="()=>Edit(line.Rule)" disabled="@busy">Editar</button><button @onclick="()=>Toggle(line.Rule)" disabled="@busy">@(line.Rule.Included?"Retirar":"Incluir")</button></td></tr>}
+</tbody><tfoot><tr><th colspan="2">Total incluído</th>@for(var m=1;m<=12;m++){var month=m;<td class="align-right"><button class="recurring-value" @onclick="()=>Show(null,month)">@Format.Money(report.MonthUnits(month))</button></td>}<td class="align-right"><strong>@Format.Money(report.TotalUnits)</strong></td><td></td></tr></tfoot></table></div>
+@if(!VisibleLines.Any()){<p class="empty-small">Não há compromissos neste filtro. Podes criar um ou identificar as categorias habituais.</p>}
+</section>
+}
+<BusyIndicator Active="busy" />
+@code{
+    int year=MovementPeriod.TodayInLisbon.Year;List<int> years=[];RecurringExpenseReport? report;List<Category> categories=[];List<AccountSummary> accounts=[];
+    RecurringExpenseForm? editor;string? message;bool busy,error,showExcluded,detailsOpen;string search="";long? detailId;int? detailMonth;int detailLimit=50;
+    protected override async Task OnInitializedAsync(){categories=await Service.CategoriesAsync();accounts=await Service.AccountsAsync();years=(await Service.MovementYearsAsync()).Append(year).Distinct().OrderDescending().ToList();await Reload();}
+    async Task Reload(){report=await Service.RecurringExpensesAsync(year);}
+    IEnumerable<RecurringExpenseLine> VisibleLines=>(report?.Lines??[]).Where(l=>(showExcluded||l.Rule.Included)&&(l.Rule.Name+" "+l.Category).Contains(search,StringComparison.CurrentCultureIgnoreCase));
+    int ObservedMonths=>Enumerable.Range(1,12).Count(m=>report!.MonthCount(m)>0);
+    int LastMonth=>Enumerable.Range(1,12).Where(m=>report!.MonthCount(m)>0).DefaultIfEmpty(0).Max();
+    string LastChange{get{var m=LastMonth;if(m<2||report!.MonthCount(m-1)==0)return "Sem comparação com o mês anterior";var prior=report.MonthUnits(m-1);var difference=report.MonthUnits(m)-prior;return $"{(difference>0?"+":"")}{Format.Money(difference)} face a {MonthName(m-1)}"+(prior==0?"":$" ({difference/(decimal)prior:+0.0%;-0.0%;0.0%})");}}
+    int BarHeight(long units)=>(int)Math.Max(2,(decimal)units/Math.Max(1,Enumerable.Range(1,12).Max(m=>report!.MonthUnits(m)))*100);
+    static string MonthName(int month)=>new DateTime(2000,month,1).ToString("MMMM",System.Globalization.CultureInfo.GetCultureInfo("pt-PT"));
+    string CategoryLabel(Category c)=>(c.ParentId is {} parent?categories.FirstOrDefault(x=>x.Id==parent)?.Name+" / ":"")+c.Name;
+    static RecurringExpenseForm Form(RecurringExpense r)=>new(){Id=r.Id,Version=r.Version,Name=r.Name,CategoryId=r.CategoryId,AccountId=r.AccountId,ContainsText=r.ContainsText,Frequency=r.Frequency,Included=r.Included};
+    void New(){editor=new();message=null;}
+    void Edit(RecurringExpense rule){editor=Form(rule);message=null;}
+    async Task Save()=>await Run(async()=>{await Service.SaveRecurringExpenseAsync(editor!);editor=null;message="Compromisso guardado. Os totais foram atualizados.";});
+    async Task Toggle(RecurringExpense rule)=>await Run(async()=>{var f=Form(rule);f.Included=!f.Included;await Service.SaveRecurringExpenseAsync(f);message=f.Included?"Compromisso incluído na análise.":"Compromisso retirado da análise. Os movimentos mantêm-se registados.";});
+    async Task Identify()=>await Run(async()=>{var count=await Service.IdentifyRecurringExpensesAsync();message=count==0?"As categorias e os fornecedores habituais já estão identificados. Podes adicionar outros compromissos.":$"{count} compromissos identificados por categoria ou fornecedor. Podes ajustar a seleção.";});
+    async Task Run(Func<Task> action){if(busy)return;busy=true;error=false;message=null;try{await action();await Reload();}catch(FinanceRuleException ex){error=true;message=ex.Message;}catch(Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException){error=true;message="Os dados foram alterados noutra sessão. Atualiza a página.";}finally{busy=false;}}
+    void Show(long? id,int? month){detailId=id;detailMonth=month;detailLimit=50;detailsOpen=true;}
+    string DetailTitle=>(detailId is {} id?report!.Lines.First(l=>l.Rule.Id==id).Rule.Name:"Despesas Recorrentes")+" · "+(detailMonth is {} month?MonthName(month)+" ":"")+year;
+    List<MovementRow> DetailRows=>(report?.Lines??[]).Where(l=>detailId is {} id?l.Rule.Id==id:l.Rule.Included).SelectMany(l=>l.Movements).Where(m=>detailMonth is null||m.Date.Month==detailMonth).OrderByDescending(m=>m.Date).ToList();
+}

@@ -1,0 +1,7 @@
+.pending-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.pending-card{display:flex;flex-direction:column;align-items:flex-start;border-top:3px solid var(--theme-accent-soft,#a2b48b);margin-bottom:0}
+.pending-card h2{font-size:17px}.pending-count{font-size:36px;line-height:1.2;margin:18px 0 10px;font-variant-numeric:tabular-nums;color:var(--theme-text,#244832)}
+.pending-card p{font-size:12px;color:var(--theme-muted,#64725e);margin-bottom:22px}
+.pending-card .button,.pending-clear{margin-top:auto}.pending-clear{font-size:12px;color:var(--theme-muted,#64725e);padding:10px 0}
+.pending-undated{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-top:22px}.pending-undated p{font-size:12px;color:var(--theme-muted,#64725e);margin:6px 0 0}
+@media(max-width:1050px){.pending-grid{grid-template-columns:1fr;gap:14px}.pending-card{padding:20px}.pending-count{margin:12px 0 8px}.pending-undated{align-items:flex-start;flex-direction:column}}

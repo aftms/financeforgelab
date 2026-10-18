@@ -16,6 +16,27 @@ namespace FinanceForgeLab.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
+            modelBuilder.Entity("FinanceForgeLab.Core.RecurringExpense", b =>
+            {
+                b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("INTEGER");
+                b.Property<long>("HouseholdId").HasColumnType("INTEGER");
+                b.Property<string>("Name").IsRequired().HasColumnType("TEXT");
+                b.Property<long?>("CategoryId").HasColumnType("INTEGER");
+                b.Property<long?>("AccountId").HasColumnType("INTEGER");
+                b.Property<string>("ContainsText").IsRequired().HasColumnType("TEXT");
+                b.Property<string>("MatchKey").IsRequired().HasColumnType("TEXT");
+                b.Property<string>("Frequency").IsRequired().HasColumnType("TEXT");
+                b.Property<bool>("Included").HasColumnType("INTEGER");
+                b.Property<int>("Version").IsConcurrencyToken().HasColumnType("INTEGER");
+                b.HasKey("Id");
+                b.HasIndex("AccountId");
+                b.HasIndex("CategoryId");
+                b.HasIndex("HouseholdId", "MatchKey").IsUnique();
+                b.ToTable("RecurringExpenses");
+                b.HasOne("FinanceForgeLab.Core.Household",null).WithMany().HasForeignKey("HouseholdId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                b.HasOne("FinanceForgeLab.Core.Category",null).WithMany().HasForeignKey("CategoryId").OnDelete(DeleteBehavior.Restrict);
+                b.HasOne("FinanceForgeLab.Core.Account",null).WithMany().HasForeignKey("AccountId").OnDelete(DeleteBehavior.Restrict);
+            });
 
             modelBuilder.Entity("FinanceForgeLab.Core.Account", b =>
                 {
@@ -56,6 +77,262 @@ namespace FinanceForgeLab.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("CK_Account_Currency", "length(Currency) = 3");
                         });
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.AssistantAttachment", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RequestId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Round")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("SourceCacheId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceCacheId");
+
+                    b.HasIndex("RequestId", "Sha256")
+                        .IsUnique();
+
+                    b.ToTable("AssistantAttachments");
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.AssistantOperation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RequestId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Round")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("AssistantOperations");
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.AssistantRequest", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Archived")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("NextCheckUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Notice")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Round")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Workflow")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique();
+
+                    b.HasIndex("Workflow");
+
+                    b.ToTable("AssistantRequests");
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.AssistantSourceCache", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CursorJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RequestId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Kind", "Scope", "SourceId", "Fingerprint")
+                        .IsUnique();
+
+                    b.ToTable("AssistantSources");
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.AssistantTurn", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DelegationId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("InputFingerprint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PollCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Prompt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("QuestionsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RequestId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Round")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserText")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestId", "Round")
+                        .IsUnique();
+
+                    b.ToTable("AssistantTurns");
                 });
 
             modelBuilder.Entity("FinanceForgeLab.Core.AuditChange", b =>
@@ -209,6 +486,52 @@ namespace FinanceForgeLab.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("BankImportEntries");
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.BankReference", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("AccountId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("AmountUnits")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CategoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Merchant")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("PurchaseDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("AccountId", "Active");
+
+                    b.ToTable("BankReferences");
                 });
 
             modelBuilder.Entity("FinanceForgeLab.Core.Category", b =>
@@ -408,6 +731,73 @@ namespace FinanceForgeLab.Infrastructure.Migrations
                     b.ToTable("ImportRows");
                 });
 
+            modelBuilder.Entity("FinanceForgeLab.Core.IndividualMovement", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AccountEdited")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("AccountId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("AmountUnits")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("CategoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("DestinationAccountId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("PaymentTransactionId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("PersonId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("SourceCategoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("DestinationAccountId");
+
+                    b.HasIndex("PersonId");
+
+                    b.HasIndex("PaymentTransactionId", "SourceCategoryId")
+                        .IsUnique();
+
+                    b.ToTable("IndividualMovements");
+                });
+
             modelBuilder.Entity("FinanceForgeLab.Core.LegacyMap", b =>
                 {
                     b.Property<long>("Id")
@@ -540,6 +930,226 @@ namespace FinanceForgeLab.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("FinanceForgeLab.Core.PurchaseEvidence", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("AccountId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("BankReferenceId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CategoryAllocationsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("[]");
+
+                    b.Property<long?>("CategoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Details")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("ExpectedPaymentDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("FinancialUnits")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("HasSourceConflict")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("HouseholdId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Merchant")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OrderIdentity")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OrderReference")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ParentEvidenceId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PaymentMethod")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReviewNotes")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("TransactionId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("Units")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("BankReferenceId");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("ParentEvidenceId");
+
+                    b.HasIndex("TransactionId")
+                        .IsUnique();
+
+                    b.HasIndex("HouseholdId", "OrderIdentity")
+                        .IsUnique();
+
+                    b.HasIndex("HouseholdId", "SourceKey")
+                        .IsUnique();
+
+                    b.ToTable("PurchaseEvidence");
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.PurchaseEvidenceSource", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("DocumentContent")
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.Property<string>("DocumentName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DocumentSha256")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("EvidenceId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("HouseholdId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EvidenceId");
+
+                    b.HasIndex("HouseholdId", "SourceKey")
+                        .IsUnique();
+
+                    b.ToTable("PurchaseEvidenceSources");
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.ReimbursementAllocation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("AmountUnits")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ClaimId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ReceiptTransactionId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceiptTransactionId");
+
+                    b.HasIndex("ClaimId", "ReceiptTransactionId")
+                        .IsUnique();
+
+                    b.ToTable("ReimbursementAllocations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ReimbursementAllocation_Amount", "AmountUnits > 0");
+                        });
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.ReimbursementClaim", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("AmountUnits")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Debtor")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ExpenseTransactionId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("HouseholdId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpenseTransactionId")
+                        .IsUnique();
+
+                    b.HasIndex("HouseholdId");
+
+                    b.ToTable("ReimbursementClaims", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ReimbursementClaim_Amount", "AmountUnits > 0");
+                        });
+                });
+
             modelBuilder.Entity("FinanceForgeLab.Core.SourceDataset", b =>
                 {
                     b.Property<string>("Id")
@@ -638,6 +1248,38 @@ namespace FinanceForgeLab.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("FinanceForgeLab.Core.AssistantAttachment", b =>
+                {
+                    b.HasOne("FinanceForgeLab.Core.AssistantRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceForgeLab.Core.AssistantSourceCache", null)
+                        .WithMany()
+                        .HasForeignKey("SourceCacheId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.AssistantOperation", b =>
+                {
+                    b.HasOne("FinanceForgeLab.Core.AssistantRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.AssistantTurn", b =>
+                {
+                    b.HasOne("FinanceForgeLab.Core.AssistantRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("FinanceForgeLab.Core.BankImport", b =>
                 {
                     b.HasOne("FinanceForgeLab.Core.Account", null)
@@ -668,6 +1310,21 @@ namespace FinanceForgeLab.Infrastructure.Migrations
                     b.HasOne("FinanceForgeLab.Core.FinancialTransaction", null)
                         .WithMany()
                         .HasForeignKey("TransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.BankReference", b =>
+                {
+                    b.HasOne("FinanceForgeLab.Core.Account", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceForgeLab.Core.Category", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -729,6 +1386,35 @@ namespace FinanceForgeLab.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("FinanceForgeLab.Core.IndividualMovement", b =>
+                {
+                    b.HasOne("FinanceForgeLab.Core.Account", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceForgeLab.Core.Category", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceForgeLab.Core.Account", null)
+                        .WithMany()
+                        .HasForeignKey("DestinationAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceForgeLab.Core.FinancialTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceForgeLab.Core.Person", null)
+                        .WithMany()
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("FinanceForgeLab.Core.LegacyMap", b =>
                 {
                     b.HasOne("FinanceForgeLab.Core.SourceDataset", null)
@@ -762,6 +1448,85 @@ namespace FinanceForgeLab.Infrastructure.Migrations
                     b.HasOne("FinanceForgeLab.Core.FinancialTransaction", null)
                         .WithMany()
                         .HasForeignKey("TransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.PurchaseEvidence", b =>
+                {
+                    b.HasOne("FinanceForgeLab.Core.Account", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceForgeLab.Core.BankReference", null)
+                        .WithMany()
+                        .HasForeignKey("BankReferenceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceForgeLab.Core.Category", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceForgeLab.Core.Household", null)
+                        .WithMany()
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceForgeLab.Core.PurchaseEvidence", null)
+                        .WithMany()
+                        .HasForeignKey("ParentEvidenceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceForgeLab.Core.FinancialTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("TransactionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.PurchaseEvidenceSource", b =>
+                {
+                    b.HasOne("FinanceForgeLab.Core.PurchaseEvidence", null)
+                        .WithMany()
+                        .HasForeignKey("EvidenceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceForgeLab.Core.Household", null)
+                        .WithMany()
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.ReimbursementAllocation", b =>
+                {
+                    b.HasOne("FinanceForgeLab.Core.ReimbursementClaim", null)
+                        .WithMany()
+                        .HasForeignKey("ClaimId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceForgeLab.Core.FinancialTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiptTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FinanceForgeLab.Core.ReimbursementClaim", b =>
+                {
+                    b.HasOne("FinanceForgeLab.Core.FinancialTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("ExpenseTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceForgeLab.Core.Household", null)
+                        .WithMany()
+                        .HasForeignKey("HouseholdId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

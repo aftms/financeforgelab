@@ -1,0 +1,9 @@
+@page "/manual"
+<PageTitle>Manual e procedimentos · FinanceForgeLab</PageTitle>
+<div class="page-heading"><div><span class="eyebrow">COMO FUNCIONA</span><h1>Manual e procedimentos</h1><p>Regras de atualização, classificação e conferência dos teus registos.</p></div></div>
+<section class="panel manual-intro"><strong>Uma despesa, várias fontes.</strong><p>Quando chega um extrato, a primeira tarefa é cruzar os movimentos com o que já existe. Uma compra já registada recebe a ligação ao banco e a conta em falta; não se regista a despesa outra vez.</p><small>Versão @FinanceOperatingManual.Version · Estas mesmas regras acompanham cada pedido enviado ao Assistente.</small></section>
+<nav class="manual-index" aria-label="Índice do manual">@foreach(var p in FinanceOperatingManual.Procedures){<a href="@($"#manual-{p.Id}")">@p.Title</a>}</nav>
+@foreach(var p in FinanceOperatingManual.Procedures)
+{
+    <section class="panel manual-section" id="@($"manual-{p.Id}")" aria-labelledby="@($"title-{p.Id}")"><h2 id="@($"title-{p.Id}")">@p.Title</h2><p class="hint"><strong>Quando:</strong> @p.Trigger</p><ol>@foreach(var step in p.Steps){<li>@step</li>}</ol><p class="manual-check"><strong>Antes de concluir:</strong> @p.Completion</p></section>
+}

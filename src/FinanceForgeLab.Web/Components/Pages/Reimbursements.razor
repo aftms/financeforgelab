@@ -1,0 +1,50 @@
+@page "/reembolsos"
+@inject ReimbursementService Refunds
+<PageTitle>Reembolsos · FinanceForgeLab</PageTitle>
+<div class="page-heading"><div><span class="eyebrow">ADIANTAMENTOS A TERCEIROS</span><h1>Reembolsos a receber</h1><p>Acompanha o que pagaste por outras pessoas ou entidades e confere os recebimentos.</p></div></div>
+@if(message is not null){<div role="status" class="notice @(error?"error":"success")">@message</div>}
+<section class="panel reimbursement-overview"><div><span>Adiantado</span><strong>@Format.Money(rows.Sum(r=>r.Claim.AmountUnits))</strong></div><div><span>Reembolsado</span><strong>@Format.Money(rows.Sum(r=>r.PaidUnits))</strong></div><div><span>Por receber</span><strong>@Format.Money(rows.Sum(r=>r.RemainingUnits))</strong></div></section>
+<section class="panel reimbursement-list"><div class="panel-heading"><h2>Adiantamentos e recebimentos</h2><label class="checkbox-label"><input type="checkbox" @bind="pendingOnly"/> Só por receber</label></div>
+@foreach(var row in rows.Where(r=>!pendingOnly||r.RemainingUnits>0||r.NeedsReview))
+{
+    <article class="purchase-card" @key="row.Claim.Id"><div class="purchase-summary"><div><small>@row.Date.ToString("dd/MM/yyyy") · @row.Claim.Debtor</small><h3>@row.Description</h3><small>@(row.Account??"Conta do pagamento por associar") · movimento #@row.Claim.ExpenseTransactionId</small></div><div class="align-right"><strong>@Format.Money(row.Claim.AmountUnits)</strong><p class="badge neutral">@(row.RemainingUnits==0?"Reembolsado":row.PaidUnits>0?"Reembolso parcial":"Por receber")</p></div></div>
+    <p>Recebido: <strong>@Format.Money(row.PaidUnits)</strong> · Falta receber: <strong>@Format.Money(row.RemainingUnits)</strong></p>
+    @if(row.NeedsReview){<p class="purchase-warning">O pagamento ou um recebimento foi alterado. Confere os movimentos antes de associar outro reembolso.</p>}
+    @foreach(var receipt in row.Receipts){<div class="reimbursement-receipt"><span>@(receipt.Valid?"✓":"Por conferir · não contabilizado") @receipt.Date.ToString("dd/MM/yyyy") · @receipt.Description · <strong>@Format.Money(receipt.Units)</strong></span><button class="button ghost small" disabled="@busy" @onclick="()=>Unlink(row,receipt)">Desassociar</button></div>}
+    @if(row.RemainingUnits>0&&!row.NeedsReview)
+    {
+        var matches=candidates.GetValueOrDefault(row.Claim.Id)??[];
+        if(matches.Count==0){<p class="hint">Ainda não foi identificado um recebimento correspondente nos movimentos ou nos extratos carregados. O valor continua por receber.</p>}
+        else{<details class="reimbursement-matches" open><summary>@matches.Count recebimento(s) a conferir</summary>@foreach(var match in matches){var units=Math.Min(row.RemainingUnits,match.Units);<div class="reimbursement-receipt"><div><strong>@match.Date.ToString("dd/MM/yyyy") · @Format.Money(match.Units)</strong><p>@match.Description</p><small>@match.Account · @(match.ImportId is null?"Movimento já registado":"Recebimento no extrato, por registar")</small></div><button class="button small" disabled="@busy" @onclick="()=>Link(row,match,units)">Confirmar reembolso de @Format.Money(units)</button></div>}</details>}
+    }
+    </article>
+}
+@if(!rows.Any(r=>!pendingOnly||r.RemainingUnits>0||r.NeedsReview)){<p class="empty-small">Não há reembolsos por receber. Desativa o filtro para consultar os já recebidos.</p>}
+</section>
+<BusyIndicator Active="busy" />
+@code {
+    List<ReimbursementRow> rows=[];
+    Dictionary<long,List<ReimbursementCandidate>> candidates=[];
+    bool pendingOnly=true,busy,error;string? message;
+    protected override async Task OnInitializedAsync()=>await Reload();
+    async Task Reload()
+    {
+        rows=await Refunds.ListAsync();candidates=[];
+        foreach(var row in rows.Where(r=>r.RemainingUnits>0&&!r.NeedsReview))candidates[row.Claim.Id]=await Refunds.CandidatesAsync(row.Claim.Id);
+    }
+    async Task Link(ReimbursementRow row,ReimbursementCandidate match,long units)=>await Run(async()=>
+    {
+        if(match.TransactionId is {} transaction)await Refunds.LinkAsync(row.Claim.Id,row.Claim.Version,transaction,units);
+        else if(match.ImportId is {} import&&match.Ordinal is {} ordinal)await Refunds.LinkStatementAsync(row.Claim.Id,row.Claim.Version,import,ordinal,units);
+        message="Reembolso associado. O valor por receber foi atualizado.";
+    });
+    async Task Unlink(ReimbursementRow row,ReimbursementReceipt receipt)=>await Run(async()=>{await Refunds.UnlinkAsync(row.Claim.Id,row.Claim.Version,receipt.Id);message="Associação removida. O recebimento mantém-se nos movimentos.";});
+    async Task Run(Func<Task> action)
+    {
+        if(busy)return;busy=true;StateHasChanged();await Task.Delay(1);error=false;
+        try{await action();await Reload();}
+        catch(FinanceRuleException e){error=true;message=e.Message;await Reload();}
+        catch(Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException){error=true;message="Os dados foram alterados. Confere a consulta atualizada.";await Reload();}
+        finally{busy=false;}
+    }
+}

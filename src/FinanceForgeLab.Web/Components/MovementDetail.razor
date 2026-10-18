@@ -1,0 +1,32 @@
+<div class="movement-detail">
+    <strong>@Title</strong>
+    @if(Row.ReconciliationWarning is not null){<small class="purchase-warning">@Row.ReconciliationWarning</small>}
+    @if(Row.Sources.Count>0)
+    {
+        <details class="movement-source-details"><summary>Origem e documentos (@Row.Sources.Count)</summary>
+            <small>Origem: @OriginLabel</small>
+            @foreach(var source in Row.Sources){@if(source.Email is {} email){<div class="movement-source-link"><EmailSourceSummary Email="email"/><a href="@source.Url">Consultar comprovativo guardado →</a></div>}else{<a class="movement-source-link" href="@source.Url" download="@source.Download">@source.Kind · @source.Description</a>}}
+        </details>
+    }
+    else {<small class="movement-origin">Origem: @OriginLabel</small>}
+    @if(Row.EvidenceId is null&&(!string.IsNullOrWhiteSpace(Row.OriginalSubcategory)||!string.IsNullOrWhiteSpace(Row.Notes)&&Row.Notes!=Row.Description))
+    {
+    <details class="movement-source-details"><summary>Detalhes</summary>
+    @if(!string.IsNullOrWhiteSpace(Row.OriginalSubcategory))
+    {
+        <small class="movement-original">@(HasDescription?"Classificação original: ":"Detalhe original: ")@Row.OriginalCategory / @Row.OriginalSubcategory</small>
+    }
+    else if(!HasDescription&&!string.IsNullOrWhiteSpace(Row.Category))
+    {
+        <small class="movement-original">Identificado pela classificação</small>
+    }
+    @if(!string.IsNullOrWhiteSpace(Row.Notes)&&Row.Notes!=Row.Description){<small class="movement-notes">@Row.Notes</small>}
+    </details>
+    }
+</div>
+@code {
+    [Parameter, EditorRequired] public MovementRow Row { get; set; } = default!;
+    bool HasDescription => !string.IsNullOrWhiteSpace(Row.Description);
+    string Title => Row.DisplayDescription;
+    string OriginLabel => Row.Origin switch {"Purchase"=>"Compra documentada","BankImport"=>"Extrato / consulta bancária","BankStatement"=>"Saldo de abertura do extrato","Legacy"=>"Aplicação anterior","Manual"=>"Introdução manual","Reimbursement"=>"Reembolso documentado",_=>"Não identificada"};
+}

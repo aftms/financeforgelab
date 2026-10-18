@@ -2,7 +2,7 @@ namespace FinanceForgeLab.Core;
 
 public sealed class BankDocument
 {
-    public string Id { get; set; } = ""; // SHA-256 of the immutable PDF.
+    public string Id { get; set; } = ""; // SHA-256 of the immutable source (PDF or owner-supplied online copy).
     public string Name { get; set; } = "";
     public string ReaderVersion { get; set; } = "";
     public string StatementJson { get; set; } = "";

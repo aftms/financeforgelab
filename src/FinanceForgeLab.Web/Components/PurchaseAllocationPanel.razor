@@ -1,0 +1,31 @@
+@inject BankImportService Imports
+@using System.Text.Json
+<details class="purchase-allocation-panel">
+    <summary>Repartição por categoria · @parts.Count categorias</summary>
+    <p class="hint">A soma corresponde ao @(Evidence.PaymentMethod=="StoredValue"?"valor consumido do cartão":"total da fatura"). O pagamento mantém um único registo.</p>
+    @if(Evidence.FinancialUnits is {} paid&&paid!=Evidence.Units){<p class="hint">Pagamento bancário: @Format.Money(paid). @(paid==0?"Consumo de benefícios, sem despesa bancária adicional.":"A parte bancária é repartida proporcionalmente pelas categorias.")</p>}
+    @foreach(var part in parts){<div class="purchase-allocation-row" @key="part"><CategoryPicker Categories="Categories" Kind="MovementKind.Expense" @bind-Value="part.CategoryId" Disabled="busy" Context="da repartição"/><label>Montante EUR<input type="number" @bind="part.Amount" step="0.01" disabled="@busy"/></label><button type="button" class="button small" disabled="@busy" @onclick="()=>parts.Remove(part)">Retirar</button></div>}
+    <div class="purchase-actions"><span class="hint">Soma: @parts.Sum(p=>p.Amount).ToString("N2") € · @(Evidence.PaymentMethod=="StoredValue"?"Consumo":"Fatura"): @(Evidence.Units is {} total?Format.Money(total):"—")</span><button type="button" class="button small" disabled="@busy" @onclick="()=>parts.Add(new())">Adicionar categoria</button><button type="button" class="button small" disabled="@busy" @onclick="Save">Guardar repartição</button></div>
+    @if(message is not null){<p role="@(error?"alert":"status")" class="notice @(error?"error":"success")">@message</p>}
+</details>
+<BusyIndicator Active="busy" />
+@code {
+    [Parameter,EditorRequired] public PurchaseEvidence Evidence{get;set;}=default!;
+    [Parameter,EditorRequired] public List<Category> Categories{get;set;}=[];
+    [Parameter]public EventCallback OnSaved{get;set;}
+    List<Part> parts=[];long loadedId;int loadedVersion;bool busy,error;string? message;
+    protected override void OnParametersSet()
+    {
+        if(Evidence.Id==loadedId&&Evidence.Version==loadedVersion)return;
+        loadedId=Evidence.Id;loadedVersion=Evidence.Version;
+        parts=(JsonSerializer.Deserialize<List<PurchaseCategoryAllocation>>(Evidence.CategoryAllocationsJson)??[]).Select(p=>new Part{CategoryId=p.CategoryId,Amount=Money.FromUnits(p.Units),Description=p.Description}).ToList();
+    }
+    async Task Save()
+    {
+        if(busy)return;busy=true;StateHasChanged();await Task.Delay(1);message=null;error=false;
+        try{await Imports.SaveEvidenceAllocationsAsync(Evidence.Id,Evidence.Version,parts.Select(p=>new PurchaseCategoryAllocation(p.CategoryId??0,Money.ToUnits(p.Amount),p.Description)).ToList());await OnSaved.InvokeAsync();message="Repartição guardada.";}
+        catch(Exception ex) when(ex is FinanceRuleException or ArgumentException or OverflowException){message=ex.Message;error=true;}
+        finally{busy=false;}
+    }
+    sealed class Part{public long? CategoryId{get;set;}public decimal Amount{get;set;}public string Description{get;set;}="";}
+}

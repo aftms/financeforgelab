@@ -35,3 +35,7 @@
 *.p12
 *.pem
 *.key
+
+# Python maintenance tools
+**/__pycache__/
+*.pyc

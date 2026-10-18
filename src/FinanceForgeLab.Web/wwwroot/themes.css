@@ -1,0 +1,60 @@
+/* Light uses the existing colour fallbacks. Only dark defines these shared tokens. */
+:root{color-scheme:light}
+:root[data-theme="dark"]{
+    color-scheme:dark;
+    --theme-text:#e0eae4;
+    --theme-muted:#a9bbb0;
+    --theme-surface:#1a2722;
+    --theme-surface-raised:#25362d;
+    --theme-nav:#0d1b16;
+    --theme-border:#3c5145;
+    --theme-primary:#255c43;
+    --theme-accent:#91d7ae;
+    --theme-accent-soft:#345c44;
+    --theme-danger:#f0a396;
+    --theme-danger-soft:#422c29;
+    --theme-danger-strong:#873f39;
+    --theme-warning:#e8c18a;
+    --theme-warning-soft:#3a3224;
+    --green:var(--theme-accent);
+    --ink:var(--theme-text);
+    --muted:var(--theme-muted);
+    --border:var(--theme-border);
+    --red:var(--theme-danger);
+    background:#111b17;color:var(--theme-text);
+}
+.theme-picker{display:inline-flex;flex-direction:row;align-items:center;gap:6px;margin:0;color:var(--theme-muted,#526357);font-size:16px;flex-shrink:0}
+.theme-picker select{font:500 12px "Segoe UI",system-ui,sans-serif;width:98px;min-height:32px;padding:5px 8px;border:1px solid var(--theme-border,#d6ded5);border-radius:7px;background:var(--theme-surface,#fff);color:var(--theme-text,#243a2f);cursor:pointer}
+.theme-picker select:focus-visible{outline:2px solid var(--theme-accent,#196649);outline-offset:3px}
+.topbar-right{gap:14px}.topbar-right .avatar{margin-left:0}.local-status{white-space:nowrap}
+:root[data-theme="dark"] .topbar{background:#16221c}
+:root[data-theme="dark"] :is(input,select,textarea){background-color:#14221b}
+:root[data-theme="dark"] :is(input,textarea)::placeholder{color:#97aa9d;opacity:1}
+:root[data-theme="dark"] input[type=checkbox]{accent-color:#72bd91}
+:root[data-theme="dark"] .sidebar{background:#0d1b16}
+:root[data-theme="dark"] .sidebar nav a.active{background:#244b36;color:#e0f3e7}
+:root[data-theme="dark"] :is(.button.primary,.submit-button){background:#286749;color:#fff;border-color:#468963}
+:root[data-theme="dark"] :is(.button.primary,.submit-button):hover{background:#317c58}
+:root[data-theme="dark"] :is(.button.danger){color:#fff}
+:root[data-theme="dark"] .income{background:#213e2d!important;color:#96dfae!important}
+:root[data-theme="dark"] .expense{background:#422d27!important;color:#efb49a!important}
+:root[data-theme="dark"] .positive{color:#96dfae}
+:root[data-theme="dark"] .negative{color:var(--theme-danger)}
+:root[data-theme="dark"] .notice.warning{background:var(--theme-warning-soft);border-color:#6b5736;color:var(--theme-warning)}
+:root[data-theme="dark"] .notice.error{background:var(--theme-danger-soft);border-color:#80534b;color:var(--theme-danger)}
+:root[data-theme="dark"] .notice.success{background:#213e2d;color:#96dfae}
+:root[data-theme="dark"] .stat-card.dark{background:#214731;border-color:#39684b}
+:root[data-theme="dark"] .monthly-chart{border-color:#3c5145;background:repeating-linear-gradient(to top,transparent 0px,transparent 44px,#2c3c32 45px,#2c3c32 46px)}
+:root[data-theme="dark"] :is(.income-bar,.income-dot){background:#65ba87}
+:root[data-theme="dark"] :is(.expense-bar,.expense-dot){background:#b7c58c}
+:root[data-theme="dark"] .progress-track{background:#2b3b31}
+:root[data-theme="dark"] .category-bar .progress-track span{background:#8daf8a}
+:root[data-theme="dark"] .category-bar:nth-child(2) .progress-track span{background:#a9bd87}
+:root[data-theme="dark"] .category-bar:nth-child(3) .progress-track span{background:#7ba796}
+:root[data-theme="dark"] .operation-busy{background:rgba(0,0,0,.16)}
+:root[data-theme="dark"] .access-panel{background:#17231c}
+:root[data-theme="dark"] .story-panel{background:#0d211a}
+:root[data-theme="dark"] .emblem{background:#102f2b}
+@media(max-width:680px){.topbar-right{gap:8px}.topbar .local-status{display:none}.theme-picker select{width:90px}.topbar{gap:12px}}
+@media(max-width:400px){.topbar>span:first-child{display:none}.topbar-right{margin-right:auto}}
+@media print{.theme-picker{display:none}}

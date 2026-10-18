@@ -1,0 +1,67 @@
+@inject BankImportService Imports
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+<details class="bank-reference-panel" open="@expanded" tabindex="-1" @ref="panel" @key="openSequence">
+    <summary>Referências e compras · @references.Count guardadas</summary>
+    <p class="hint">Explica uma cobrança recorrente ou junta as compras de Amazon, PayPal e outros serviços. As referências ficam associadas a esta conta e ajudam nos próximos extratos.</p>
+    @if(message is not null){<p role="status" class="@(error?"danger-text":"hint")">@message</p>}
+    <div class="reference-actions"><button type="button" class="button small" disabled="@busy" @onclick="New">+ Código ou entidade</button><button type="button" class="button small" disabled="@busy" @onclick="()=>showEvidence=!showEvidence">Lista ou foto de compras</button></div>
+    @if(showEvidence)
+    {
+        <div class="purchase-evidence">
+            <div class="reference-actions"><label>Serviço / loja<input @bind="merchant" placeholder="Amazon, PayPal, outra loja…" maxlength="150"/></label><label class="button upload-button">@(busy?"A ler…":"↑ Carregar lista ou foto")<InputFile OnChange="Upload" accept=".png,.jpg,.jpeg,.txt,.csv,.tsv" disabled="@busy"/></label></div>
+            <label>Lista de compras ou texto lido da imagem<textarea rows="4" @bind="evidenceText" placeholder="Data;Montante;Descrição;Encomenda (opcional)&#10;02/07/2026;29,90;Livro de cozinha;123-1234567-1234567"></textarea></label>
+            <p class="hint">PNG/JPG ou lista TXT/CSV/TSV, até 10 MB. O texto lido pode ser corrigido. Usa o total efetivamente cobrado por compra; confirma datas e valores. Uma encomenda com várias cobranças precisa de uma referência por cobrança.</p>
+            <button type="button" class="button" disabled="@(busy||string.IsNullOrWhiteSpace(evidenceText))" @onclick="PreparePurchases">Preparar compras para conferir</button>
+        </div>
+    }
+    @foreach(var form in proposals)
+    {
+        <div class="reference-editor" @key="form">
+            <label>Entidade / serviço<input @bind="form.Merchant" maxlength="150" placeholder="PayPal, Amazon, entidade…"/></label>
+            <label>Código que aparece no banco<input @bind="form.Code" maxlength="150" placeholder="N.º de contrato / referência (se houver)"/></label>
+            <label class="reference-detail">A que corresponde<input @bind="form.Description" maxlength="500" placeholder="Finalidade da prestação ou artigos comprados"/></label>
+            <CategoryPicker Categories="Categories" Value="@(form.CategoryId==0?(long?)null:form.CategoryId)" ValueChanged="id=>form.CategoryId=id??0" Disabled="busy" Context="da referência"/>
+            <label>Data da compra (pontual)<input type="date" @bind="form.PurchaseDate"/></label>
+            <label>Montante cobrado em EUR<input type="number" step="0.0001" min="0.0001" @bind="form.Amount"/></label>
+            <div class="reference-actions"><button type="button" class="button primary small" disabled="@busy" @onclick="()=>Save(form)">Aprovar referência</button><button type="button" class="button ghost small" disabled="@busy" @onclick="()=>proposals.Remove(form)">Cancelar</button></div>
+        </div>
+    }
+    @if(proposals.Count>0){<p class="hint">Para uma cobrança recorrente, deixa data e montante vazios e indica o código estável. Para uma compra pontual, indica ambos. O número de encomenda pode ser diferente do código bancário.</p>}
+    @if(references.Count>0)
+    {
+        <details class="saved-references"><summary>Consultar / alterar referências guardadas</summary>
+        @foreach(var reference in references){<div class="saved-reference"><div><strong>@reference.Description</strong><small>@reference.Merchant @reference.Code · @CategoryLabel(reference.CategoryId) @if(reference.PurchaseDate is {} date){<span> · @date.ToString("dd/MM/yyyy") · @Format.Money(reference.AmountUnits??0)</span>}</small></div><button type="button" class="button ghost small" disabled="@busy" @onclick="()=>Edit(reference)">Alterar</button><button type="button" class="button ghost small" disabled="@busy" @onclick="()=>Archive(reference)">Desativar</button></div>}
+        </details>
+    }
+</details>
+<BusyIndicator Active="busy" />
+@code {
+    [Parameter] public long AccountId {get;set;}
+    [Parameter] public List<Category> Categories {get;set;}=[];
+    [Parameter] public EventCallback OnChanged {get;set;}
+    List<BankReference> references=[];List<BankReferenceForm> proposals=[];
+    ElementReference panel;IJSObjectReference? module;bool scrollRequested;int openSequence;
+    long loadedAccount;bool expanded,showEvidence,busy,error;string? message;string merchant="Amazon",evidenceText="";
+    IEnumerable<Category> ActiveCategories=>Categories.Where(c=>c.Active&&(c.ParentId is null||Categories.Any(p=>p.Id==c.ParentId&&p.Active)));
+    string CategoryName(Category c)=>(c.ParentId is null?"":Categories.FirstOrDefault(p=>p.Id==c.ParentId)?.Name+" / ")+c.Name;
+    string CategoryLabel(long id)=>Categories.FirstOrDefault(c=>c.Id==id) is {} category?CategoryName(category):"Categoria indisponível";
+    protected override async Task OnParametersSetAsync(){if(loadedAccount!=AccountId){loadedAccount=AccountId;references=await Imports.ReferencesAsync(AccountId);proposals.Clear();message=null;}}
+    void New(){expanded=true;proposals.Add(new(){AccountId=AccountId});}
+    public void Explain(string description,long? categoryId)
+    {
+        expanded=true;scrollRequested=true;openSequence++;
+        var code=System.Text.RegularExpressions.Regex.Matches(description,@"\b\d{6,}\b").Select(m=>m.Value).FirstOrDefault(s=>!System.Text.RegularExpressions.Regex.IsMatch(s,@"^20\d{6}$"))??"";
+        var entity=description.Contains("PAYPAL",StringComparison.OrdinalIgnoreCase)?"PAYPAL":description.Contains("AMAZON",StringComparison.OrdinalIgnoreCase)||description.Contains("AMZN",StringComparison.OrdinalIgnoreCase)?"AMAZON":code.Length>0?"":description;
+        proposals.Add(new(){AccountId=AccountId,Merchant=entity,Code=code,CategoryId=categoryId??0});StateHasChanged();
+    }
+    void Edit(BankReference r){expanded=true;if(proposals.Any(p=>p.Id==r.Id))return;proposals.Add(new(){Id=r.Id,Version=r.Version,IsPurchase=r.PurchaseDate!=null,AccountId=r.AccountId,Merchant=r.Merchant,Code=r.Code,Description=r.Description,CategoryId=r.CategoryId,PurchaseDate=r.PurchaseDate,Amount=r.AmountUnits is {} amount?Money.FromUnits(amount):null});}
+    async Task Save(BankReferenceForm form)=>await Run(async()=>{form.AccountId=AccountId;await Imports.SaveReferenceAsync(form);proposals.Remove(form);references=await Imports.ReferencesAsync(AccountId);await OnChanged.InvokeAsync();message="Referência guardada. As sugestões do extrato foram atualizadas; a importação continua a precisar da tua aprovação.";});
+    async Task Archive(BankReference reference)=>await Run(async()=>{await Imports.ArchiveReferenceAsync(reference.Id,reference.Version);references=await Imports.ReferencesAsync(AccountId);await OnChanged.InvokeAsync();message="Referência desativada para sugestões futuras.";});
+    async Task Upload(InputFileChangeEventArgs args)=>await Run(async()=>{using var stream=new MemoryStream();await args.File.OpenReadStream(PurchaseEvidenceReader.MaxBytes).CopyToAsync(stream);evidenceText=await PurchaseEvidenceReader.ReadAsync(args.File.Name,stream.ToArray());Prepare();});
+    async Task PreparePurchases()=>await Run(()=>{Prepare();return Task.CompletedTask;});
+    void Prepare(){if(string.IsNullOrWhiteSpace(merchant))throw new FinanceRuleException("Indica a loja ou serviço destas compras.");proposals=PurchaseReferenceParser.Parse(evidenceText,merchant,AccountId,Categories);message=$"{proposals.Count} propostas preparadas. Confere o texto, as categorias, datas e montantes antes de aprovar cada referência.";}
+    async Task Run(Func<Task> action){if(busy)return;busy=true;StateHasChanged();await Task.Delay(1);message=null;error=false;try{await action();}catch(FinanceRuleException e){message=e.Message;error=true;}catch(Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException){message="A referência foi alterada noutra sessão. Atualiza a lista.";error=true;}catch(IOException){message="Não foi possível ler o ficheiro. Verifica o formato e o limite de 10 MB.";error=true;}finally{busy=false;}}
+    protected override async Task OnAfterRenderAsync(bool firstRender){if(!scrollRequested)return;scrollRequested=false;module??=await JS.InvokeAsync<IJSObjectReference>("import","./editor.js");await module.InvokeVoidAsync("showEditor",panel);}
+    public async ValueTask DisposeAsync(){if(module is not null){try{await module.DisposeAsync();}catch(JSDisconnectedException){}}}
+}

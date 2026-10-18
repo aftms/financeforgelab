@@ -1,0 +1,34 @@
+<div class="category-picker">
+    <label><span>Categoria<span class="sr-only"> @Context</span></span><select value="@RootId" @onchange="ChangeRoot" disabled="@Disabled">
+        <option value="">Escolher categoria</option>
+        @foreach(var category in Roots){<option value="@category.Id">@category.Name</option>}
+    </select></label>
+    <label><span>Subcategoria<span class="sr-only"> @Context</span></span><select value="@ChildId" @onchange="ChangeChild" disabled="@(Disabled||RootId is null||!Children.Any())">
+        <option value="">@(RootId is null?"Escolhe primeiro a categoria":Children.Any()?"Sem subcategoria":"Sem subcategorias")</option>
+        @foreach(var category in Children){<option value="@category.Id">@category.Name</option>}
+    </select></label>
+</div>
+@code {
+    [Parameter] public List<Category> Categories {get;set;}=[];
+    [Parameter] public MovementKind? Kind {get;set;}
+    [Parameter] public long? Value {get;set;}
+    [Parameter] public EventCallback<long?> ValueChanged {get;set;}
+    [Parameter] public bool Disabled {get;set;}
+    [Parameter] public bool PreserveInactiveSelection {get;set;}
+    [Parameter] public string Context {get;set;}="";
+    IEnumerable<Category> Roots=>Categories.Where(c=>(c.Active||PreserveInactiveSelection&&(c.Id==Value||c.Id==Selected?.ParentId))&&c.ParentId is null&&(Kind is null||c.Kind==Kind));
+    Category? Selected=>Categories.FirstOrDefault(c=>c.Id==Value&&(c.Active||PreserveInactiveSelection)&&(Kind is null||c.Kind==Kind));
+    long? RootId=>Selected is {} selected&&Roots.Any(c=>c.Id==(selected.ParentId??selected.Id))?selected.ParentId??selected.Id:null;
+    long? ChildId=>Selected is {ParentId:not null} selected&&selected.ParentId==RootId?selected.Id:null;
+    IEnumerable<Category> Children=>RootId is {} root?Categories.Where(c=>(c.Active||PreserveInactiveSelection&&c.Id==Value)&&c.ParentId==root&&(Kind is null||c.Kind==Kind)):[];
+    async Task ChangeRoot(ChangeEventArgs args)
+    {
+        var id=long.TryParse(args.Value?.ToString(),out var parsed)&&Roots.Any(c=>c.Id==parsed)?parsed:(long?)null;
+        await ValueChanged.InvokeAsync(id);
+    }
+    async Task ChangeChild(ChangeEventArgs args)
+    {
+        var id=long.TryParse(args.Value?.ToString(),out var parsed)&&Children.Any(c=>c.Id==parsed)?parsed:RootId;
+        await ValueChanged.InvokeAsync(id);
+    }
+}

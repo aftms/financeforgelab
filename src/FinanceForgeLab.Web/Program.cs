@@ -17,6 +17,7 @@ builder.WebHost.UseStaticWebAssets();
 var workspace = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "../.."));
 var dbPath = Path.GetFullPath(builder.Configuration["Finance:DatabasePath"] ?? Path.Combine(workspace, ".private/finance.sqlite"));
 var privatePath = Path.GetFullPath(builder.Configuration["Finance:PrivatePath"] ?? Path.Combine(workspace, ".private/web"));
+builder.Configuration.AddJsonFile(Path.Combine(privatePath,"assistant-settings.json"),optional:true,reloadOnChange:true);
 if (!File.Exists(dbPath)) throw new InvalidOperationException("Cria a base operacional antes de iniciar a aplicação.");
 await using (var check = FinanceDb.Open(dbPath))
     if ((await check.Database.GetPendingMigrationsAsync()).Any()) throw new InvalidOperationException("Existem migrações pendentes. Executa a atualização com backup descrita no README.");
@@ -24,6 +25,14 @@ Directory.CreateDirectory(privatePath);
 builder.Configuration["AllowedHosts"] = "localhost;127.0.0.1;[::1]";
 builder.Services.AddSingleton<Func<FinanceDb>>(() => FinanceDb.Open(dbPath));
 builder.Services.AddSingleton<FinanceService>(); builder.Services.AddSingleton<OwnerAuth>();
+builder.Services.AddSingleton<ReimbursementService>();
+builder.Services.AddSingleton<AssistantService>();
+builder.Services.AddSingleton<AssistantActions>();
+builder.Services.AddSingleton<AssistantBundle>();
+builder.Services.AddHttpClient<IAssistantGateway,AssistantGateway>(client=>client.Timeout=TimeSpan.FromSeconds(25));
+builder.Services.AddHttpClient<IAssistantSourceReader,AssistantSourceReader>(client=>client.Timeout=TimeSpan.FromSeconds(50)).ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false});
+builder.Services.AddSingleton<AssistantWorker>();
+if(!builder.Environment.IsEnvironment("Testing"))builder.Services.AddHostedService(sp=>sp.GetRequiredService<AssistantWorker>());
 builder.Services.AddSingleton(new BankImportService(() => FinanceDb.Open(dbPath), Path.Combine(privatePath, "statements")));
 builder.Services.AddSingleton(new BackupManager(dbPath, Path.Combine(privatePath, "backups")));
 if (!builder.Environment.IsEnvironment("Testing")) builder.Services.AddHostedService<DailyBackup>();
@@ -63,10 +72,13 @@ api.MapGet("/security/token", (HttpContext ctx, IAntiforgery anti) => Results.Ok
 api.MapGet("/dashboard", (int? year, FinanceService service) => service.DashboardAsync(year));
 api.MapGet("/movements", ([AsParameters] ApiMovementFilter filter, FinanceService service) => service.MovementsAsync(filter.ToFilter()));
 api.MapGet("/accounts", (FinanceService service) => service.AccountsAsync());
+api.MapGet("/purchases/sources/{id:long}/original",async(long id,BankImportService service)=>{var file=await service.EvidenceOriginalAsync(id);return Results.File(file.Content,"application/pdf",file.Name);});
+api.MapGet("/reimbursements", (ReimbursementService service) => service.ListAsync());
 api.MapGet("/movements/{id:long}", (long id, FinanceService service) => service.MovementAsync(id));
 api.MapPost("/movements/{id:long}/void", async (long id, VoidRequest form, FinanceService service) => { await service.VoidMovementAsync(id, form.Version, form.RequestId); return Results.NoContent(); });
 api.MapGet("/categories", (FinanceService service) => service.CategoriesAsync());
-api.MapGet("/statements/{id:long}/original", async (long id, BankImportService service) => { var file = await service.OriginalAsync(id); return Results.File(file.Content, "application/pdf", file.Name); });
+api.MapGet("/assistant/{requestId}/attachments/{id:long}",async(string requestId,long id,AssistantService service)=>{var file=await service.FileAsync(requestId,id);return Results.File(file.Content,file.ContentType,file.Name);});
+api.MapGet("/statements/{id:long}/original", async (long id, BankImportService service) => { var file = await service.OriginalAsync(id); return Results.File(file.Content, file.Content.AsSpan().StartsWith("%PDF-"u8) ? "application/pdf" : "text/plain; charset=utf-8", file.Name); });
 api.MapPost("/movements", async (MovementForm form, FinanceService service) => Results.Ok(new { Id = await service.SaveMovementAsync(form) }));
 api.MapPost("/accounts", async (AccountForm form, FinanceService service) => Results.Ok(new { Id = await service.SaveAccountAsync(form) }));
 api.MapPost("/categories", async (CategoryForm form, FinanceService service) => Results.Ok(new { Id = await service.SaveCategoryAsync(form) }));
@@ -82,6 +94,7 @@ app.Run();
 
 public sealed class ApiMovementFilter
 {
+    public long? TransactionId { get; set; }
     public DateOnly? From { get; set; }
     public DateOnly? To { get; set; }
     public long? AccountId { get; set; }
@@ -91,7 +104,9 @@ public sealed class ApiMovementFilter
     public string? Search { get; set; }
     public bool? IncludeVoided { get; set; }
     public int? Page { get; set; }
-    public MovementFilter ToFilter() => new() { From = From, To = To, AccountId = AccountId, CategoryId = CategoryId, PersonId = PersonId, Kind = Kind, Search = Search, IncludeVoided = IncludeVoided ?? false, Page = Page ?? 1 };
+    public MovementSort? Sort { get; set; }
+    public bool? Descending { get; set; }
+    public MovementFilter ToFilter() => new() { TransactionId=TransactionId,From = From, To = To, AccountId = AccountId, CategoryId = CategoryId, PersonId = PersonId, Kind = Kind, Search = Search, IncludeVoided = IncludeVoided ?? false, Page = Page ?? 1, Sort = Sort ?? MovementSort.Date, Descending = Descending ?? true };
 }
 public partial class Program;
 public sealed record VoidRequest(int Version, Guid RequestId);
