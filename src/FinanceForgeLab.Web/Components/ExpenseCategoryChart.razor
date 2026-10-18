@@ -1,0 +1,28 @@
+<div class="category-bars" aria-label="Despesas por categoria e subcategoria">
+@foreach(var category in Categories){
+    <details class="expense-category" @key="(Year,category.CategoryId)">
+        <summary aria-label="@($"Subcategorias de {category.Name} em {Year}: {Format.Money(category.Units)}")">
+            <span class="category-chevron" aria-hidden="true">▸</span>
+            <div class="category-bar category-root @(category.Units<0?"category-negative":"")"><div><span>@category.Name</span><strong>@Format.Money(category.Units)</strong></div><div class="progress-track"><span style="width:@Width(category.Units,Maximum)%"></span></div></div>
+        </summary>
+        <div class="category-children">
+        @foreach(var child in category.Subcategories){
+            <a class="category-bar category-child @(child.Units<0?"category-negative":"")" href="@Movements(child.CategoryId)" aria-label="@($"Consultar movimentos de {category.Name} / {child.Name} em {Year}")">
+                <div><span>@child.Name</span><strong>@Format.Money(child.Units)</strong></div><div class="progress-track"><span style="width:@Width(child.Units,Math.Abs((decimal)category.Units))%"></span></div>
+            </a>
+        }
+        @if(category.DirectUnits!=0){<div class="category-direct"><span>@(category.CategoryId is null?"Sem categoria atribuída":"Sem subcategoria")</span><strong>@Format.Money(category.DirectUnits)</strong></div>}
+        @if(category.Subcategories.Count==0){<p class="hint category-empty">Sem repartição por subcategorias neste ano.</p>}
+        <a class="category-all" href="@Movements(category.CategoryId)">Ver todos os movimentos de @category.Name →</a>
+        </div>
+    </details>
+}
+@if(Categories.Count==0){<p class="empty-small">Ainda não há despesas neste período.</p>}
+</div>
+@code{
+    [Parameter] public List<CategorySummary> Categories{get;set;}=[];
+    [Parameter] public int Year{get;set;}
+    decimal Maximum=>Math.Max(1,Categories.Select(c=>Math.Abs((decimal)c.Units)).DefaultIfEmpty(1).Max());
+    static int Width(long units,decimal maximum)=>(int)Math.Clamp(Math.Abs((decimal)units)/Math.Max(1,maximum)*100,0,100);
+    string Movements(long? category)=>$"/movimentos?ano={Year}&tipo=Expense&categoria={category??0}";
+}

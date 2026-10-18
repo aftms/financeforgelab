@@ -170,6 +170,10 @@ public sealed partial class PurchaseAllocationTests:IAsyncLifetime
         var dashboard=await Finance.DashboardAsync(2025);
         Assert.Equal(food,dashboard.Expenses.Single(c=>c.Name=="Alimentação").CategoryId);
         Assert.Equal(careRoot,dashboard.Expenses.Single(c=>c.Name=="Cuidados pessoais").CategoryId);
+        var careSummary=dashboard.Expenses.Single(c=>c.CategoryId==careRoot);
+        Assert.Equal(care,Assert.Single(careSummary.Subcategories).CategoryId);Assert.Equal(careSummary.Units,careSummary.Subcategories[0].Units);
+        Assert.Equal(0,careSummary.DirectUnits);
+        foreach(var parent in dashboard.Expenses)Assert.Equal(parent.Units,parent.DirectUnits+parent.Subcategories.Sum(c=>c.Units));
         Assert.Null(dashboard.Expenses.Single(c=>c.Name=="Por classificar").CategoryId);
         Assert.Equal(unclassified,Assert.Single((await Finance.MovementsAsync(new(){CategoryId=0,Kind=MovementKind.Expense,From=new(2025,1,1),To=new(2025,12,31)})).Rows).Id);
         foreach(var category in dashboard.Expenses)

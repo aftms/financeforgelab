@@ -286,14 +286,18 @@ public sealed partial class FinanceService(Func<FinanceDb> open)
         var months = Enumerable.Range(1, 12).Select(m => new MonthSummary(m, Sum(financial.Where(x => x.Date.Month == m && x.Kind == MovementKind.Income).Select(x => x.Units)),
             checked(-Sum(financial.Where(x => x.Date.Month == m && x.Kind == MovementKind.Expense).Select(x => x.Units))), financial.Count(x => x.Date.Month == m))).ToList();
         var categories = await db.Categories.AsNoTracking().ToDictionaryAsync(c=>c.Id);
-        CategorySummary CategoryTotal(long? id, long units)
+        (Category? Root, Category? Subcategory, long Units) CategoryPart(long? id, long units)
         {
             var category = id is {} value ? categories.GetValueOrDefault(value) : null;
             var root = category?.ParentId is {} parent ? categories.GetValueOrDefault(parent) : category;
-            return new(root?.Name ?? "Por classificar",units) {CategoryId=root?.Id};
+            return (root, category?.ParentId is not null ? category : null, units);
         }
-        var expense = financial.Where(x => x.Kind == MovementKind.Expense).SelectMany(x=>x.CategoryAllocations.Count>0?x.CategoryAllocations.Select(p=>CategoryTotal(p.CategoryId,p.Units)):[CategoryTotal(x.CategoryId,checked(-x.Units))])
-            .GroupBy(x=>new{x.CategoryId,x.Name}).Select(g=>new CategorySummary(g.Key.Name,Sum(g.Select(x=>x.Units))){CategoryId=g.Key.CategoryId}).OrderByDescending(x=>x.Units).ToList();
+        var expense = financial.Where(x => x.Kind == MovementKind.Expense).SelectMany(x=>x.CategoryAllocations.Count>0?x.CategoryAllocations.Select(p=>CategoryPart(p.CategoryId,p.Units)):[CategoryPart(x.CategoryId,checked(-x.Units))])
+            .GroupBy(x=>new{CategoryId=x.Root?.Id,Name=x.Root?.Name??"Por classificar"}).Select(g=>new CategorySummary(g.Key.Name,Sum(g.Select(x=>x.Units))) {
+                CategoryId=g.Key.CategoryId, DirectUnits=Sum(g.Where(x=>x.Subcategory is null).Select(x=>x.Units)),
+                Subcategories=g.Where(x=>x.Subcategory is not null).GroupBy(x=>new{x.Subcategory!.Id,x.Subcategory!.Name})
+                    .Select(s=>new CategorySummary(s.Key.Name,Sum(s.Select(x=>x.Units))){CategoryId=s.Key.Id}).OrderByDescending(s=>s.Units).ThenBy(s=>s.Name).ToList()
+            }).OrderByDescending(x=>x.Units).ToList();
         var unassigned = await (from p in db.Postings join t in db.Transactions on p.TransactionId equals t.Id where p.AccountId == null && t.Status == "Confirmed"&&!db.IndividualMovements.Any(m=>m.PaymentTransactionId==t.Id) select p.Id).CountAsync();
         unassigned+=(await IndividualRowsAsync(db)).Count(m=>m.Status=="Confirmed"&&m.AccountId==null);
         var coverage = await BankCoverageAsync(db, selected);

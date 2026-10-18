@@ -104,6 +104,8 @@ public sealed record MonthSummary(int Month, long IncomeUnits, long ExpenseUnits
 public sealed record CategorySummary(string Name, long Units)
 {
     public long? CategoryId { get; init; }
+    public List<CategorySummary> Subcategories { get; init; } = [];
+    public long DirectUnits { get; init; }
 }
 public sealed record DashboardSummary(int Year, List<int> Years, long IncomeUnits, long ExpenseUnits, int Count,
     int UnassignedCount, List<MonthSummary> Months, List<CategorySummary> Expenses, List<AccountSummary> Accounts)
