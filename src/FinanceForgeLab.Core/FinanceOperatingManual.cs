@@ -5,7 +5,7 @@ public sealed record OperatingProcedure(string Id, string Title, string Trigger,
 // One source for the in-app manual and the instructions supplied to every AI request.
 public static class FinanceOperatingManual
 {
-    public const string Version = "2026-10-18.14";
+    public const string Version = "2026-10-18.15";
     public static IReadOnlyList<OperatingProcedure> Procedures { get; } = [
         new("principios", "Documentos, pagamentos e registos", "Sempre que se consulta ou altera informação financeira.", [
             "Uma fatura, email, imagem ou extrato é uma fonte documental. Não é uma despesa adicional.",
@@ -117,7 +117,7 @@ public static class FinanceOperatingManual
         ], "Totais mensais iguais à soma dos movimentos incluídos, sem duplicações e com as escolhas de inclusão guardadas."),
         new("utilizacao", "Consultar e usar a aplicação", "Na utilização diária.", [
             "Visão geral: escolher o ano, consultar receitas/despesas e abrir os movimentos de uma categoria. Transferências e saldos de abertura não são rendimento nem despesa do período.",
-            "Em Para onde foi o dinheiro, expandir a barra de uma categoria revela as barras das subcategorias e os respetivos totais do ano escolhido. Selecionar uma subcategoria abre Movimentos filtrado apenas por essa subcategoria, ano e despesas; Ver todos os movimentos da categoria abre o conjunto completo. Valores registados diretamente na categoria aparecem como Sem subcategoria, separados das subcategorias. A soma das parcelas conserva o total, incluindo repartições de compras e devoluções.",
+            "Em Para onde foi o dinheiro, as barras das categorias principais permanecem sempre visíveis e selecioná-las abre todos os movimentos da categoria no ano escolhido, como antes. A seta separada expande ou recolhe as barras das subcategorias e os respetivos totais; selecionar uma subcategoria abre Movimentos filtrado apenas por essa subcategoria, ano e despesas. Valores registados diretamente na categoria aparecem como Sem subcategoria, separados das subcategorias. A soma das parcelas conserva o total, incluindo repartições de compras e devoluções.",
             "No gráfico mensal da visão geral, selecionar uma barra abre os movimentos do respetivo mês e ano, filtrados por receitas ou despesas conforme a barra escolhida.",
             "Movimentos: filtrar por período, conta, pessoa, tipo ou categoria. Os filtros atualizam a consulta automaticamente; os cabeçalhos permitem ordenar. O período inicial é o mês atual.",
             "Todas as pesquisas e seleções de classificação apresentam Categoria e Subcategoria em dois campos separados e dependentes. Selecionar uma categoria na pesquisa inclui as suas subcategorias; escolher uma subcategoria restringe os resultados a essa classificação. Mudar a categoria limpa a subcategoria anterior. O filtro geral Por classificar continua a reunir todas as categorias, e as classificações antigas permanecem pesquisáveis no histórico.",

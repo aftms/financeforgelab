@@ -1,9 +1,9 @@
 <div class="category-bars" aria-label="Despesas por categoria e subcategoria">
 @foreach(var category in Categories){
     <details class="expense-category" @key="(Year,category.CategoryId)">
-        <summary aria-label="@($"Subcategorias de {category.Name} em {Year}: {Format.Money(category.Units)}")">
+        <summary aria-label="@($"Expandir ou recolher subcategorias de {category.Name} em {Year}")">
             <span class="category-chevron" aria-hidden="true">▸</span>
-            <div class="category-bar category-root @(category.Units<0?"category-negative":"")"><div><span>@category.Name</span><strong>@Format.Money(category.Units)</strong></div><div class="progress-track"><span style="width:@Width(category.Units,Maximum)%"></span></div></div>
+            <a class="category-bar expense-category-root @(category.Units<0?"category-negative":"")" href="@Movements(category.CategoryId)" aria-label="@($"Consultar movimentos de {category.Name} em {Year}")"><div><span>@category.Name</span><strong>@Format.Money(category.Units)</strong></div><div class="progress-track"><span style="width:@Width(category.Units,Maximum)%"></span></div></a>
         </summary>
         <div class="category-children">
         @foreach(var child in category.Subcategories){

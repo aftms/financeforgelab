@@ -55,6 +55,8 @@ public sealed class ExpenseCategoryChartTests : IAsyncLifetime
         await using var services=new ServiceCollection().AddLogging().BuildServiceProvider();await using var renderer=new HtmlRenderer(services,services.GetRequiredService<ILoggerFactory>());
         async Task<string> Render(int year)=>await renderer.Dispatcher.InvokeAsync(async()=>WebUtility.HtmlDecode((await renderer.RenderComponentAsync<ExpenseCategoryChart>(ParameterView.FromDictionary(new Dictionary<string,object?>{{nameof(ExpenseCategoryChart.Categories),categories},{nameof(ExpenseCategoryChart.Year),year}}))).ToHtmlString()));
         var html=await Render(2026);Assert.Equal(2,Regex.Matches(html,"<details class=\"expense-category\"").Count);Assert.DoesNotMatch("<details[^>]*\\sopen",html);
+        Assert.Matches("<a[^>]*class=\"category-bar expense-category-root[^\"]*\"[^>]*href=\"/movimentos\\?ano=2026&tipo=Expense&categoria=1\"",html);
+        Assert.Contains("Consultar movimentos de Casa em 2026",html);
         foreach(var id in new[]{11,12,21})Assert.Contains($"href=\"/movimentos?ano=2026&tipo=Expense&categoria={id}\"",html);
         Assert.Contains("Consultar movimentos de Casa / Condomínio em 2026",html);Assert.Contains("Consultar movimentos de Transportes / Condomínio em 2026",html);
         Assert.Contains("Ver todos os movimentos de Casa",html);Assert.Contains("Sem subcategoria",html);Assert.Contains("width:60%",html);
