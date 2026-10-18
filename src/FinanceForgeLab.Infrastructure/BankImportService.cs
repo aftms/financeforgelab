@@ -208,7 +208,19 @@ public sealed partial class BankImportService(Func<FinanceDb> open, string archi
         var copy = JsonSerializer.Deserialize<BankImportReview>(JsonSerializer.Serialize(review))!;
         return ConfirmCoreAsync(copy, selected);
     }
-    private async Task<BankImportResult> ConfirmCoreAsync(BankImportReview review, HashSet<int>? selected, FinanceDb? sharedDb = null)
+    // Explicitly verified debits can be recorded while the original Revolut
+    // statement retains its unresolved summary warning. This never approves the batch.
+    public Task<BankImportResult> ConfirmVerifiedDebitRowsAsync(BankImportReview review, IEnumerable<int> ordinals, string reason)
+    {
+        if(string.IsNullOrWhiteSpace(reason)||reason.Length is <20 or >2000)
+            throw new FinanceRuleException("Descreve a conferência individual do débito e dos documentos que o identificam.");
+        var selected=ordinals.ToHashSet();
+        if(selected.Count==0||selected.Any(o=>!review.Rows.Any(r=>r.Ordinal==o)))
+            throw new FinanceRuleException("Seleciona linhas válidas do extrato.");
+        var copy=JsonSerializer.Deserialize<BankImportReview>(JsonSerializer.Serialize(review))!;
+        return ConfirmCoreAsync(copy,selected,null,reason.Trim());
+    }
+    private async Task<BankImportResult> ConfirmCoreAsync(BankImportReview review, HashSet<int>? selected, FinanceDb? sharedDb = null, string? verifiedDebitReason = null)
     {
         await using var ownedDb = sharedDb is null ? open() : null;
         var db = sharedDb ?? ownedDb!;
@@ -218,7 +230,22 @@ public sealed partial class BankImportService(Func<FinanceDb> open, string archi
         if (selected is null && batch.Status == "Imported" && batch.ReviewHash == hash) return await ResultAsync(db, batch.Id, review.Rows.Count);
         if (batch.Status != "Draft" || batch.Version != review.Version) throw new FinanceRuleException("Este lote já foi confirmado, anulado ou alterado. Volta a abri-lo.");
         var document = await db.BankDocuments.SingleAsync(x => x.Id == batch.DocumentId); var statement = Statement(document); var section = statement.Accounts[batch.SectionIndex];
-        if (statement.Errors.Count > 0 || section.Errors.Count > 0) throw new FinanceRuleException("Resolve os erros de leitura e conferência antes de importar.");
+        if(verifiedDebitReason is not null)
+        {
+            const string totalWarning="Os movimentos Revolut não conferem com os totais e o saldo final.";
+            if(selected is null||statement.BankName!="Revolut"||statement.Errors.Count>0||section.Errors.Any(e=>e!=totalWarning))
+                throw new FinanceRuleException("Só é possível conferir débitos individuais com o aviso de totais Revolut; outros erros de leitura permanecem bloqueantes.");
+            foreach(var ordinal in selected)
+            {
+                var row=section.Rows.SingleOrDefault(r=>r.Ordinal==ordinal);
+                var choice=review.Rows.Single(r=>r.Ordinal==ordinal);
+                var preceding=section.Rows.TakeWhile(r=>r.Ordinal!=ordinal).LastOrDefault()?.BalanceUnits??section.OpeningUnits;
+                if(row is null||row.Units>=0||choice.Kind!=MovementKind.Expense||choice.Decision is not ("Import" or "Link")||
+                    !choice.ClassificationEdited||preceding is null||(decimal)preceding+row.Units!=row.BalanceUnits)
+                    throw new FinanceRuleException("Confere a finalidade, a classificação e o saldo sucessivo de cada débito selecionado.");
+            }
+        }
+        else if (statement.Errors.Count > 0 || section.Errors.Count > 0) throw new FinanceRuleException("Resolve os erros de leitura e conferência antes de importar.");
         if (Convert.ToHexString(SHA256.HashData(document.Content)) != document.Id) throw new FinanceRuleException("A fonte original guardada foi alterada. A importação foi bloqueada.");
         if (review.Rows.Count != section.Rows.Count || review.Rows.Select(x => x.Ordinal).Distinct().Count() != section.Rows.Count || review.Rows.Any(x => !section.Rows.Any(r => r.Ordinal == x.Ordinal))) throw new FinanceRuleException("A revisão não corresponde a todas as linhas deste extrato.");
         var account = await db.Accounts.SingleOrDefaultAsync(x => x.Id == review.AccountId && x.Active && x.Currency == "EUR") ?? throw new FinanceRuleException("Seleciona uma conta ativa em EUR.");
@@ -326,7 +353,7 @@ public sealed partial class BankImportService(Func<FinanceDb> open, string archi
             choice.Decision = "Link"; choice.ExistingTransactionId = id; choice.ExistingVersion = version;
         }
         batch.ReviewJson = JsonSerializer.Serialize(review);
-        db.Add(new AuditChange { Entity = "BankImport", EntityId = batch.Id, Action = selected is null ? "Confirm" : "ConfirmRows", Actor = "Owner", CreatedUtc = DateTime.UtcNow, DetailJson = JsonSerializer.Serialize(new { Rows = selected?.Order().ToArray(), Review = review }) });
+        db.Add(new AuditChange { Entity = "BankImport", EntityId = batch.Id, Action = verifiedDebitReason is not null ? "ConfirmVerifiedDebits" : selected is null ? "Confirm" : "ConfirmRows", Actor = "Owner", CreatedUtc = DateTime.UtcNow, DetailJson = JsonSerializer.Serialize(new { Rows = selected?.Order().ToArray(), Review = review, VerifiedDebitReason=verifiedDebitReason, PreservedStatementErrors=statement.Errors, PreservedSectionErrors=section.Errors }) });
         await db.SaveChangesAsync(); if (tx is not null) await tx.CommitAsync();
         return selected is null ? await ResultAsync(db, batch.Id, review.Rows.Count) : new(batch.Id,
             await db.BankImportEntries.CountAsync(e => e.ImportId == batch.Id && e.Created),

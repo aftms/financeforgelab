@@ -5,7 +5,7 @@ public sealed record OperatingProcedure(string Id, string Title, string Trigger,
 // One source for the in-app manual and the instructions supplied to every AI request.
 public static class FinanceOperatingManual
 {
-    public const string Version = "2026-10-18.8";
+    public const string Version = "2026-10-18.9";
     public static IReadOnlyList<OperatingProcedure> Procedures { get; } = [
         new("principios", "Documentos, pagamentos e registos", "Sempre que se consulta ou altera informação financeira.", [
             "Uma fatura, email, imagem ou extrato é uma fonte documental. Não é uma despesa adicional.",
@@ -19,6 +19,7 @@ public static class FinanceOperatingManual
         new("extratos", "Entrada de um extrato bancário", "Ao carregar PDF, OCR ou cópia de movimentos; também ao voltar a processar um extrato conhecido.", [
             "Identificar banco, conta e titular em cada secção. Extratos do mesmo período de António e Suzana não são duplicados por terem datas iguais.",
             "Conferir leitura, datas, sinais e saldos antes de usar as linhas. Uma leitura com erros permanece para verificação.",
+            "Quando um extrato Revolut tem apenas um aviso de totais, uma conferência explícita pode registar débitos individuais cuja finalidade, classificação, comprovativos e saldo sucessivo foram verificados. A operação exige uma justificação auditada, preserva o PDF e o aviso original e mantém o extrato aberto. Não aprova automaticamente as restantes linhas nem cria movimentos para compensar diferenças.",
             "Procurar cada operação nos movimentos e nas compras já guardadas, cruzando entidade, referência, valor, datas compatíveis e conta. Só o valor e a data não bastam.",
             "Nos débitos genéricos de baixo valor, conferir os documentos Via Verde: a data do débito, o valor e os dígitos visíveis do cartão devem corresponder. Associar a despesa existente e preservar a repartição entre portagens e estacionamento; não criar outra despesa pelo débito bancário.",
             "Se uma compra já registada tiver uma correspondência inequívoca, associar a linha ao movimento existente. Se a conta estiver em falta, preencher a conta do extrato no movimento e na compra. Preservar montante, categorias, repartição e fontes.",

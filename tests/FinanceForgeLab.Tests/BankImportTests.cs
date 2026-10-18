@@ -42,6 +42,59 @@ public sealed class BankImportTests : IAsyncLifetime
         return new() { Id = id, Version = p.Import.Version, AccountId = account, Rows = p.Statement.Rows.Select(r => new BankRowDecision { Ordinal = r.Ordinal, Kind = r.Units > 0 ? MovementKind.Income : MovementKind.Expense, CategoryId = r.Units > 0 ? income : expense }).ToList() };
     }
     [Theory]
+    [InlineData("valid",true)]
+    [InlineData("unchecked",false)]
+    [InlineData("balance",false)]
+    [InlineData("other-error",false)]
+    [InlineData("document-error",false)]
+    [InlineData("credit",false)]
+    [InlineData("short-reason",false)]
+    [InlineData("duplicate",false)]
+    public async Task VerifiedDebitRetainsSummaryWarningAndRequiresIndividualProof(string scenario,bool expected)
+    {
+        await using var db=Open();
+        var reference=await db.BankImports.Select(b=>b.SourceReference).FirstAsync();
+        const string warning="Os movimentos Revolut não conferem com os totais e o saldo final.";
+        var statement=new BankStatement{BankName="Revolut",Errors=scenario=="document-error"?["Documento incompleto."]:[],Accounts=[new(){
+            Reference=reference,From=new(2026,7,1),To=new(2026,7,31),OpeningUnits=1000000,ClosingUnits=850200,
+            Errors=scenario=="other-error"?["Data ambígua."]:[warning],Rows=[
+                new(){Ordinal=1,Date=new(2026,7,5),ValueDate=new(2026,7,6),Description="Render.com",Units=scenario=="credit"?100000:-100000,BalanceUnits=scenario=="balance"?899900:900000},
+                new(){Ordinal=2,Date=new(2026,7,8),Description="Outra compra por conferir",Units=-50000,BalanceUnits=850000}]}]};
+        var bytes=Encoding.UTF8.GetBytes("%PDF-verified-debit-"+scenario);
+        var hash=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+        var json=System.Text.Json.JsonSerializer.Serialize(statement);
+        db.Add(new BankDocument{Id=hash,Name="verified.pdf",Content=bytes,StatementJson=json});await db.SaveChangesAsync();
+        var batch=new BankImport{DocumentId=hash,SourceReference=reference,AccountId=account};db.Add(batch);await db.SaveChangesAsync();
+        var review=new BankImportReview{Id=batch.Id,Version=batch.Version,AccountId=account,Rows=[
+            new(){Ordinal=1,Decision="Import",Kind=MovementKind.Expense,CategoryId=expense,ClassificationEdited=scenario!="unchecked"},
+            new(){Ordinal=2,Decision="Pending",Kind=MovementKind.Expense,CategoryId=expense,Detail="Manter por conferir."}]};
+        batch.ReviewJson=System.Text.Json.JsonSerializer.Serialize(review);await db.SaveChangesAsync();
+        if(scenario=="duplicate")await Finance.SaveMovementAsync(new(){Date=new(2026,7,5),Kind=MovementKind.Expense,AccountId=account,CategoryId=expense,Amount=10,Description="Render.com"});
+        var before=await db.Transactions.CountAsync();
+        await Assert.ThrowsAsync<FinanceRuleException>(()=>Imports.ConfirmRowsAsync(review,[1]));
+        var reason=scenario=="short-reason"?"ok":"Recibo do fornecedor e débito individual conferidos por entidade, montante, data e saldo sucessivo; aviso global permanece.";
+        if(!expected)
+        {
+            await Assert.ThrowsAsync<FinanceRuleException>(()=>Imports.ConfirmVerifiedDebitRowsAsync(review,[1],reason));
+            Assert.Equal(before,await db.Transactions.CountAsync());Assert.False(await db.BankImportEntries.AnyAsync(e=>e.ImportId==batch.Id));return;
+        }
+        await Imports.ConfirmVerifiedDebitRowsAsync(review,[1],reason);
+        var reopened=await Imports.PrepareReviewAsync(batch.Id);
+        await Imports.ConfirmVerifiedDebitRowsAsync(reopened,[1],reason);
+        Assert.Equal(before+1,await db.Transactions.CountAsync());
+        var entry=Assert.Single(await db.BankImportEntries.Where(e=>e.ImportId==batch.Id).ToListAsync());
+        Assert.Equal(1,entry.Ordinal);Assert.True(entry.Created);
+        var post=await db.Postings.SingleAsync(p=>p.TransactionId==entry.TransactionId);
+        Assert.Equal(-100000,post.AmountUnits);Assert.Equal(new DateOnly(2026,7,6),post.ValueDate);
+        var saved=await db.BankImports.AsNoTracking().SingleAsync(b=>b.Id==batch.Id);
+        Assert.Equal("Draft",saved.Status);Assert.Equal(json,(await db.BankDocuments.AsNoTracking().SingleAsync(d=>d.Id==hash)).StatementJson);
+        Assert.Equal("Pending",System.Text.Json.JsonSerializer.Deserialize<BankImportReview>(saved.ReviewJson)!.Rows[1].Decision);
+        var audits=await db.AuditChanges.Where(a=>a.Entity=="BankImport"&&a.EntityId==batch.Id&&a.Action=="ConfirmVerifiedDebits").ToListAsync();
+        Assert.Equal(2,audits.Count);
+        Assert.All(audits,a=>{using var audit=System.Text.Json.JsonDocument.Parse(a.DetailJson);Assert.Equal(reason,audit.RootElement.GetProperty("VerifiedDebitReason").GetString());Assert.Equal(warning,Assert.Single(audit.RootElement.GetProperty("PreservedSectionErrors").EnumerateArray()).GetString());});
+        await Assert.ThrowsAsync<FinanceRuleException>(()=>Imports.ConfirmAsync(reopened));
+    }
+    [Theory]
     [InlineData(false,false,2,100000L,false,true)]
     [InlineData(true,false,2,100000L,false,false)]
     [InlineData(true,true,2,100000L,false,true)]
