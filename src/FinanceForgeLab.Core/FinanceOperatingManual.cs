@@ -5,7 +5,7 @@ public sealed record OperatingProcedure(string Id, string Title, string Trigger,
 // One source for the in-app manual and the instructions supplied to every AI request.
 public static class FinanceOperatingManual
 {
-    public const string Version = "2026-10-18.15";
+    public const string Version = "2026-10-20.1";
     public static IReadOnlyList<OperatingProcedure> Procedures { get; } = [
         new("principios", "Documentos, pagamentos e registos", "Sempre que se consulta ou altera informação financeira.", [
             "Uma fatura, email, imagem ou extrato é uma fonte documental. Não é uma despesa adicional.",
@@ -116,6 +116,7 @@ public static class FinanceOperatingManual
             "A periodicidade identificada pelo histórico é estimada e pode ser ajustada. A tabela e o gráfico permitem consultar os movimentos que compõem cada valor. Meses sem registos não confirmam ausência de cobrança."
         ], "Totais mensais iguais à soma dos movimentos incluídos, sem duplicações e com as escolhas de inclusão guardadas."),
         new("utilizacao", "Consultar e usar a aplicação", "Na utilização diária.", [
+            "O acesso local mantém-se no computador da aplicação. Quando estiver configurado um endereço HTTPS externo, usar a mesma palavra-passe do proprietário; os dados e os documentos continuam guardados nesse computador. O acesso pelo túnel exige que o computador esteja ligado, com sessão Windows iniciada e internet. O primeiro proprietário só pode ser criado localmente. Acesso remoto não cria outra base de dados nem sincroniza cópias independentes.",
             "Visão geral: escolher o ano, consultar receitas/despesas e abrir os movimentos de uma categoria. Transferências e saldos de abertura não são rendimento nem despesa do período.",
             "Em Para onde foi o dinheiro, as barras das categorias principais permanecem sempre visíveis e selecioná-las abre todos os movimentos da categoria no ano escolhido, como antes. A seta separada expande ou recolhe as barras das subcategorias e os respetivos totais; selecionar uma subcategoria abre Movimentos filtrado apenas por essa subcategoria, ano e despesas. Valores registados diretamente na categoria aparecem como Sem subcategoria, separados das subcategorias. A soma das parcelas conserva o total, incluindo repartições de compras e devoluções.",
             "No gráfico mensal da visão geral, selecionar uma barra abre os movimentos do respetivo mês e ano, filtrados por receitas ou despesas conforme a barra escolhida.",

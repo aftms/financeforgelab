@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Text;
 using FinanceForgeLab.Infrastructure;
 using FinanceForgeLab.Web.Components;
@@ -18,11 +17,14 @@ var workspace = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPat
 var dbPath = Path.GetFullPath(builder.Configuration["Finance:DatabasePath"] ?? Path.Combine(workspace, ".private/finance.sqlite"));
 var privatePath = Path.GetFullPath(builder.Configuration["Finance:PrivatePath"] ?? Path.Combine(workspace, ".private/web"));
 builder.Configuration.AddJsonFile(Path.Combine(privatePath,"assistant-settings.json"),optional:true,reloadOnChange:true);
+builder.Configuration.AddJsonFile(Path.Combine(privatePath,"remote-access.json"),optional:true,reloadOnChange:false);
+var remoteAccess = new RemoteAccessPolicy(builder.Configuration["Finance:PublicOrigin"]);
 if (!File.Exists(dbPath)) throw new InvalidOperationException("Cria a base operacional antes de iniciar a aplicação.");
 await using (var check = FinanceDb.Open(dbPath))
     if ((await check.Database.GetPendingMigrationsAsync()).Any()) throw new InvalidOperationException("Existem migrações pendentes. Executa a atualização com backup descrita no README.");
 Directory.CreateDirectory(privatePath);
-builder.Configuration["AllowedHosts"] = "localhost;127.0.0.1;[::1]";
+builder.Configuration["AllowedHosts"] = remoteAccess.AllowedHosts;
+builder.Services.AddSingleton(remoteAccess);
 builder.Services.AddSingleton<Func<FinanceDb>>(() => FinanceDb.Open(dbPath));
 builder.Services.AddSingleton<FinanceService>(); builder.Services.AddSingleton<OwnerAuth>();
 builder.Services.AddSingleton<ReimbursementService>();
@@ -53,7 +55,16 @@ builder.Services.AddRazorPages(); builder.Services.AddRazorComponents().AddInter
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("pt-PT"); CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo("pt-PT");
 var app = builder.Build();
 app.Use(async (ctx, next) => {
-    if (ctx.Connection.RemoteIpAddress is IPAddress ip && !IPAddress.IsLoopback(ip)) { ctx.Response.StatusCode = 403; return; }
+    if (!remoteAccess.Allows(ctx)) { ctx.Response.StatusCode = 403; return; }
+    if (remoteAccess.IsPublic(ctx.Request)) {
+        ctx.Request.Scheme = "https";
+        ctx.Response.Headers.StrictTransportSecurity = "max-age=15552000";
+        if (!await ctx.RequestServices.GetRequiredService<OwnerAuth>().ExistsAsync()) {
+            ctx.Response.StatusCode = 503;
+            await ctx.Response.WriteAsync("O acesso remoto ainda não está pronto. Configura primeiro o proprietário no computador da aplicação.");
+            return;
+        }
+    }
     ctx.Response.Headers.XContentTypeOptions = "nosniff"; ctx.Response.Headers.XFrameOptions = "DENY"; ctx.Response.Headers["Referrer-Policy"] = "same-origin";
     ctx.Response.Headers.CacheControl = "no-store"; await next();
 });

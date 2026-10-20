@@ -42,6 +42,10 @@ Depois de a base estar disponível em `.private/finance.sqlite`, executa **`Star
 
 O servidor continua em segundo plano; executar novamente o lançador reutiliza a instância existente. Para parar, executa **`Stop-FinanceForgeLab.cmd`**. Os registos ficam em `.private/runtime`.
 
+## Acesso externo por HTTPS
+
+O [guia de acesso remoto](docs/acesso-remoto.md) descreve um túnel Cloudflare independente para a mesma aplicação e base de dados. Depois de configurado, **`Start-RemoteAccess.cmd`** inicia o acesso e instala o arranque ao iniciar sessão Windows; **`Stop-RemoteAccess.cmd`** para apenas o túnel. O computador da aplicação precisa de estar ligado, com sessão iniciada e internet.
+
 ## Estrutura
 
 | Projeto | Responsabilidade |
@@ -56,7 +60,7 @@ O servidor continua em segundo plano; executar novamente o lançador reutiliza a
 
 Valores monetários são guardados como inteiros de 64 bits à escala de quatro casas decimais. Transferências são atómicas e não entram nos totais de receitas/despesas. Histórico sem conta identificada permanece por associar; movimentos anteriores à abertura não são novamente somados ao saldo inicial.
 
-A aplicação exige autenticação, protege os pedidos de escrita e liga apenas ao computador local. As chaves de proteção de cookies são protegidas por DPAPI no Windows. As exportações de backup podem ser cifradas com uma palavra-passe própria.
+A aplicação exige autenticação, protege os pedidos de escrita e liga apenas ao computador local. Um túnel HTTPS pode publicar exclusivamente o endereço configurado em `Finance:PublicOrigin`, mantendo o servidor em loopback. O primeiro proprietário continua a ser criado apenas localmente. As chaves de proteção de cookies são protegidas por DPAPI no Windows. As exportações de backup podem ser cifradas com uma palavra-passe própria.
 
 As alterações de esquema são explícitas, precedidas de backup. O servidor recusa arrancar com migrações pendentes e não atualiza automaticamente a base no arranque.
 

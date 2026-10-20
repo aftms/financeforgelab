@@ -52,7 +52,7 @@
                             <input id="password" name="Password" type="password" minlength="12" maxlength="200" required autocomplete="@(Model.FirstAccess ? "new-password" : "current-password")" placeholder="@(Model.FirstAccess ? "Escolhe uma palavra-passe" : "A tua palavra-passe")" aria-describedby="password-help caps-warning" />
                             <button type="button" class="reveal-button" data-reveal="password" aria-controls="password" aria-label="Mostrar palavra-passe" aria-pressed="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
                         </div>
-                        <p id="password-help" class="field-help">@(Model.FirstAccess ? "Usa pelo menos 12 caracteres. Uma frase é fácil de recordar." : "Usa a palavra-passe que criaste neste computador.")</p>
+                        <p id="password-help" class="field-help">@(Model.FirstAccess ? "Usa pelo menos 12 caracteres. Uma frase é fácil de recordar." : "Usa a palavra-passe deste espaço.")</p>
                         <p id="caps-warning" class="caps-warning" role="status" hidden>Caps Lock está ativo.</p>
                     </div>
                     @if (Model.FirstAccess)
@@ -68,7 +68,7 @@
                     }
                     <button class="submit-button" type="submit"><span>@(Model.FirstAccess ? "Criar o meu espaço" : "Entrar no meu espaço")</span><span aria-hidden="true">↗</span></button>
                 </form>
-                <div class="privacy-note"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg><p><strong>As tuas finanças ficam contigo.</strong><br />Dados guardados localmente neste computador.</p></div>
+                <div class="privacy-note"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg><p><strong>As tuas finanças ficam contigo.</strong><br />Dados guardados no computador da aplicação.</p></div>
             </div>
             <footer class="panel-footer">Menos ruído. Mais espaço para o que importa.</footer>
         </section>

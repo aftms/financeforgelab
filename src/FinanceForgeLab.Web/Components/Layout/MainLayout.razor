@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject RemoteAccessPolicy RemoteAccess
 <div class="app-shell"><aside class="sidebar">
 <a class="brand" href="/"><img class="brand-icon" src="/brand/financeforge-family.png" width="36" height="36" alt=""/><span>Finance<span class="brand-light">ForgeLab</span></span></a>
 <div class="workspace-label"><span class="status-dot"></span> Espaço da família</div>
@@ -14,7 +15,7 @@
 <span class="nav-label nav-spacer">ORGANIZAÇÃO</span>
 <NavLink href="/categorias"><span aria-hidden="true">◇</span> Categorias</NavLink>
 <NavLink href="/contas"><span aria-hidden="true">▤</span> Contas</NavLink><NavLink href="/dados"><span aria-hidden="true">▧</span> Dados e cópias</NavLink><NavLink href="/manual"><span aria-hidden="true">?</span> Manual e procedimentos</NavLink></nav>
-<div class="sidebar-bottom"><div class="local-card"><span class="status-dot"></span><strong>O teu espaço, local.</strong><p>Os dados ficam neste computador.</p></div>
+<div class="sidebar-bottom"><div class="local-card"><span class="status-dot"></span><strong>O teu espaço privado.</strong><p>Os dados ficam no computador da aplicação.</p></div>
 <form action="/Access?handler=Logout" method="post" data-enhance="false"><AntiforgeryToken/><button class="logout" type="submit">Terminar sessão <span>↗</span></button></form></div></aside>
-<div class="main-shell"><header class="topbar"><span>FINANÇAS COM MAIS CLAREZA</span><span class="topbar-right"><span class="local-status"><span class="status-dot"></span> Utilização local</span><ThemePicker/><span class="avatar" title="Proprietário">P</span></span><form class="mobile-exit" action="/Access?handler=Logout" method="post" data-enhance="false"><AntiforgeryToken/><button type="submit" aria-label="Terminar sessão">Sair ↗</button></form></header><main class="main-content">@Body</main><footer class="app-footer">FinanceForgeLab <span>Um registo de cada vez.</span></footer></div></div>
+<div class="main-shell"><header class="topbar"><span>FINANÇAS COM MAIS CLAREZA</span><span class="topbar-right"><span class="local-status"><span class="status-dot"></span> @(RemoteAccess.Enabled?"Acesso local e remoto":"Utilização local")</span><ThemePicker/><span class="avatar" title="Proprietário">P</span></span><form class="mobile-exit" action="/Access?handler=Logout" method="post" data-enhance="false"><AntiforgeryToken/><button type="submit" aria-label="Terminar sessão">Sair ↗</button></form></header><main class="main-content">@Body</main><footer class="app-footer">FinanceForgeLab <span>Um registo de cada vez.</span></footer></div></div>
 <div id="blazor-error-ui" role="alert">Ocorreu um erro. <a href="">Atualizar a aplicação</a><button class="dismiss" aria-label="Fechar">×</button></div>
